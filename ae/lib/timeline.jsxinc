@@ -1,0 +1,107 @@
+// Shared helpers for the transcript scripts. Included with #include.
+
+var Timeline = (function () {
+    var REVIEW_LABEL = 1; // red
+
+    function readJson(file) {
+        file.encoding = "UTF-8";
+        if (!file.open("r")) {
+            throw new Error("Cannot open file: " + file.fsName);
+        }
+        var text = file.read();
+        file.close();
+        // ExtendScript has no JSON.parse. The file comes from our transcribe.py.
+        return eval("(" + text + ")");
+    }
+
+    function quote(text) {
+        return '"' + text.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
+            .replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t") + '"';
+    }
+
+    // ExtendScript has no JSON.stringify.
+    function stringify(value, indent) {
+        var inner = indent + "  ";
+        var parts = [];
+        var key;
+        if (value === null || value === undefined) {
+            return "null";
+        }
+        if (typeof value === "string") {
+            return quote(value);
+        }
+        if (typeof value !== "object") {
+            return String(value);
+        }
+        if (value instanceof Array) {
+            for (key = 0; key < value.length; key++) {
+                parts.push(inner + stringify(value[key], inner));
+            }
+            return parts.length ? "[\n" + parts.join(",\n") + "\n" + indent + "]" : "[]";
+        }
+        for (key in value) {
+            if (value.hasOwnProperty(key)) {
+                parts.push(inner + quote(key) + ": " + stringify(value[key], inner));
+            }
+        }
+        return parts.length ? "{\n" + parts.join(",\n") + "\n" + indent + "}" : "{}";
+    }
+
+    // Goes through a temp file: without the AE scripting permission a write leaves an empty file.
+    function writeJson(file, data, backupPath) {
+        var temp = new File(file.fsName + ".tmp");
+        temp.encoding = "UTF-8";
+        temp.lineFeed = "Unix";
+        var opened = temp.open("w");
+        var written = opened && temp.write(stringify(data, ""));
+        temp.close();
+        if (!written || temp.length === 0) {
+            temp.remove();
+            throw new Error("Cannot write the transcript. Enable Settings > Scripting & Expressions > " +
+                "Allow Scripts to Write Files and Access Network.");
+        }
+        if (!file.copy(backupPath) || !temp.copy(file.fsName)) {
+            temp.remove();
+            throw new Error("Cannot replace file: " + file.fsName);
+        }
+        temp.remove();
+    }
+
+    function findAudioLayer(comp) {
+        var candidates = [];
+        var i;
+        for (i = 0; i < comp.selectedLayers.length; i++) {
+            if (comp.selectedLayers[i].hasAudio) {
+                candidates.push(comp.selectedLayers[i]);
+            }
+        }
+        if (candidates.length === 0) {
+            for (i = 1; i <= comp.numLayers; i++) {
+                if (comp.layer(i).hasAudio) {
+                    candidates.push(comp.layer(i));
+                }
+            }
+        }
+        return candidates.length === 1 ? candidates[0] : null;
+    }
+
+    function findTimelineFile(layer) {
+        var source = layer.source;
+        if (source && source.mainSource && source.mainSource.file) {
+            var audioPath = source.mainSource.file.fsName;
+            var file = new File(audioPath.replace(/\.[^.\/]+$/, "") + ".timeline.json");
+            if (file.exists) {
+                return file;
+            }
+        }
+        return File.openDialog("Select a .timeline.json file", "*.json");
+    }
+
+    return {
+        REVIEW_LABEL: REVIEW_LABEL,
+        readJson: readJson,
+        writeJson: writeJson,
+        findAudioLayer: findAudioLayer,
+        findTimelineFile: findTimelineFile
+    };
+})();
