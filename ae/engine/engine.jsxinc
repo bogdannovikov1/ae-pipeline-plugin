@@ -1,0 +1,256 @@
+// Scene engine: shared helpers for animation blocks. Blocks live in the base folder.
+
+$.global.Engine = (function () {
+    var E = { blocks: {}, store: {}, starts: {}, footage: {}, tokens: null, assets: [], comp: null, base: "", timeline: null };
+
+    // Returns a copy of base with patch applied over it: one item can restyle anything.
+    E.overlay = function (base, patch) {
+        var result = {};
+        var key;
+        for (key in base) {
+            if (base.hasOwnProperty(key)) {
+                result[key] = base[key];
+            }
+        }
+        for (key in patch) {
+            if (patch.hasOwnProperty(key)) {
+                var nested = typeof patch[key] === "object" && patch[key] !== null && !(patch[key] instanceof Array);
+                result[key] = nested && base[key] ? E.overlay(base[key], patch[key]) : patch[key];
+            }
+        }
+        return result;
+    };
+
+    E.register = function (id, build) {
+        E.blocks[id] = build;
+    };
+
+    E.rgb = function (hex) {
+        var value = parseInt(hex.replace("#", ""), 16);
+        return [(value >> 16 & 255) / 255, (value >> 8 & 255) / 255, (value & 255) / 255];
+    };
+
+    E.color = function (name) {
+        return E.rgb(E.tokens.colors[name] || name);
+    };
+
+    // Time comes from a word marker, another item (after) or seconds, plus an optional delay.
+    E.time = function (spec) {
+        var delay = spec.delay || 0;
+        if (spec.at_word !== undefined) {
+            // The picture leads the voice: the viewer sees the object before hearing the word.
+            return Math.max(0, E.timeline.words[spec.at_word].start - E.tokens.motion.lead + delay);
+        }
+        if (spec.after !== undefined) {
+            return E.starts[spec.after] + delay;
+        }
+        if (spec.at !== undefined) {
+            return spec.at + delay;
+        }
+        throw new Error("Item has no time: " + spec.block);
+    };
+
+    E.endTime = function (spec) {
+        return spec.until_word === undefined ? null : E.timeline.words[spec.until_word].end;
+    };
+
+    function easeSize(prop) {
+        if (prop.propertyValueType === PropertyValueType.ThreeD) {
+            return 3;
+        }
+        return prop.propertyValueType === PropertyValueType.TwoD ? 2 : 1;
+    }
+
+    E.smooth = function (prop) {
+        var ease = new KeyframeEase(0, E.tokens.motion.ease_influence);
+        var side = [];
+        for (var n = 0; n < easeSize(prop); n++) {
+            side.push(ease);
+        }
+        for (var k = 1; k <= prop.numKeys; k++) {
+            prop.setTemporalEaseAtKey(k, side, side);
+        }
+    };
+
+    E.keys = function (prop, times, values) {
+        for (var i = 0; i < times.length; i++) {
+            prop.setValueAtTime(times[i], values[i]);
+        }
+        E.smooth(prop);
+    };
+
+    E.fadeIn = function (layer, t, duration) {
+        layer.opacity.setValueAtTime(t, 0);
+        layer.opacity.setValueAtTime(t + duration, 100);
+    };
+
+    E.fadeOut = function (layer, t, duration) {
+        layer.opacity.setValueAtTime(t - duration, layer.opacity.valueAtTime(t - duration, false));
+        layer.opacity.setValueAtTime(t, 0);
+        layer.outPoint = t;
+    };
+
+    E.pop = function (layer, t) {
+        var duration = E.tokens.motion.pop_duration;
+        var over = E.tokens.motion.pop_overshoot;
+        E.keys(layer.scale, [t, t + duration * 0.65, t + duration],
+            [[0, 0, 100], [over, over, 100], [100, 100, 100]]);
+        E.fadeIn(layer, t, duration * 0.3);
+    };
+
+    function addShadow(layer, token, colorName) {
+        var effect = layer.property("ADBE Effect Parade").addProperty("ADBE Drop Shadow");
+        effect.property("ADBE Drop Shadow-0001").setValue(E.color(colorName).concat([1]));
+        effect.property("ADBE Drop Shadow-0002").setValue(token.opacity);
+        effect.property("ADBE Drop Shadow-0003").setValue(token.direction);
+        effect.property("ADBE Drop Shadow-0004").setValue(token.distance);
+        effect.property("ADBE Drop Shadow-0005").setValue(token.softness);
+    }
+
+    // Depth comes from a dark shadow; a soft drop shadow gives the glow and keeps the exact burgundy.
+    E.shadow = function (layer) {
+        addShadow(layer, E.tokens.shadow.depth, "black");
+    };
+
+    // A hard offset shadow reads as the side of raised letters.
+    E.extrude = function (layer) {
+        addShadow(layer, E.tokens.shadow.extrude, "accent_red");
+    };
+
+    E.glow = function (layer, strong, colorName) {
+        addShadow(layer, strong ? E.tokens.shadow.focus : E.tokens.shadow.glow, colorName || "glow");
+    };
+
+    // One calm vertical drift for all objects: they move together, so nothing sways.
+    E.float = function (layer) {
+        var motion = E.tokens.motion;
+        layer.threeDLayer = true;
+        layer.position.expression = "value + [0, Math.sin(time * " + motion.float_speed + ") * " + motion.float_shift + ", 0]";
+    };
+
+    // Layers of one object sit a little apart in depth: on a shared plane AE can flip their order.
+    E.lift = function (layer, z) {
+        var position = layer.position.value;
+        layer.threeDLayer = true;
+        layer.position.setValue([position[0], position[1], z]);
+    };
+
+    E.rectFill = function (layer) {
+        return layer.property("ADBE Root Vectors Group").property(1).property("ADBE Vectors Group")
+            .property("ADBE Vector Graphic - Fill").property("ADBE Vector Fill Color");
+    };
+
+    E.rectSize = function (layer) {
+        return layer.property("ADBE Root Vectors Group").property(1).property("ADBE Vectors Group")
+            .property("ADBE Vector Shape - Rect").property("ADBE Vector Rect Size");
+    };
+
+    E.tag = function (layer, id) {
+        layer.comment = "scene:" + id;
+        return layer;
+    };
+
+    function addGroup(layer, name) {
+        var group = layer.property("ADBE Root Vectors Group").addProperty("ADBE Vector Group");
+        group.name = name;
+        return group;
+    }
+
+    E.addStroke = function (group, color, width) {
+        var stroke = group.property("ADBE Vectors Group").addProperty("ADBE Vector Graphic - Stroke");
+        stroke.property("ADBE Vector Stroke Color").setValue(color);
+        stroke.property("ADBE Vector Stroke Width").setValue(width);
+        stroke.property("ADBE Vector Stroke Line Cap").setValue(2);
+        stroke.property("ADBE Vector Stroke Line Join").setValue(2);
+        return stroke;
+    };
+
+    E.rect = function (name, size, radius, position, fill, stroke) {
+        var layer = E.comp.layers.addShape();
+        layer.name = name;
+        var group = addGroup(layer, "rect");
+        var content = group.property("ADBE Vectors Group");
+        var shape = content.addProperty("ADBE Vector Shape - Rect");
+        shape.property("ADBE Vector Rect Size").setValue(size);
+        shape.property("ADBE Vector Rect Roundness").setValue(radius);
+        if (fill) {
+            content.addProperty("ADBE Vector Graphic - Fill").property("ADBE Vector Fill Color").setValue(fill);
+        }
+        if (stroke) {
+            E.addStroke(group, stroke.color, stroke.width);
+        }
+        layer.position.setValue(position);
+        return layer;
+    };
+
+    // Coordinates are comp pixels: the layer stays at the comp origin.
+    E.path = function (layer, name, points, inTangents, outTangents, closed) {
+        var group = addGroup(layer, name);
+        var path = new Shape();
+        path.vertices = points;
+        path.inTangents = inTangents;
+        path.outTangents = outTangents;
+        path.closed = closed;
+        group.property("ADBE Vectors Group").addProperty("ADBE Vector Shape - Group")
+            .property("ADBE Vector Shape").setValue(path);
+        return group;
+    };
+
+    E.vectorLayer = function (name) {
+        var layer = E.comp.layers.addShape();
+        layer.name = name;
+        layer.position.setValue([0, 0]);
+        return layer;
+    };
+
+    E.text = function (name, value, style) {
+        var layer = E.comp.layers.addText(value);
+        layer.name = name;
+        var prop = layer.property("ADBE Text Properties").property("ADBE Text Document");
+        var doc = prop.value;
+        doc.font = style.font;
+        doc.fontSize = style.size;
+        doc.applyFill = true;
+        doc.fillColor = style.color;
+        doc.applyStroke = false;
+        doc.justification = style.left ? ParagraphJustification.LEFT_JUSTIFY : ParagraphJustification.CENTER_JUSTIFY;
+        prop.setValue(doc);
+        var box = layer.sourceRectAtTime(0, false);
+        var anchorX = style.left ? 0 : box.left + box.width / 2;
+        layer.anchorPoint.setValue([anchorX, box.top + box.height / 2]);
+        layer.position.setValue(style.position);
+        return layer;
+    };
+
+    E.font = function (kind) {
+        return E.tokens.text.fonts[kind];
+    };
+
+    E.asset = function (id) {
+        if (E.footage[id]) {
+            return E.footage[id];
+        }
+        for (var i = 0; i < E.assets.length; i++) {
+            if (E.assets[i].id === id) {
+                var file = new File(E.base + "/assets/" + E.assets[i].file);
+                E.footage[id] = app.project.importFile(new ImportOptions(file));
+                return E.footage[id];
+            }
+        }
+        throw new Error("Unknown asset: " + id);
+    };
+
+    // A block may name its sound; false in params turns it off.
+    E.sound = function (params, name, t) {
+        var id = params.sound === undefined ? E.tokens.sounds[name] : params.sound;
+        if (!id) {
+            return [];
+        }
+        var layer = E.comp.layers.add(E.asset(id));
+        layer.startTime = t;
+        layer.audio.audioLevels.setValue([E.tokens.sounds.level, E.tokens.sounds.level]);
+        return [layer];
+    };
+
+    return E;
+})();

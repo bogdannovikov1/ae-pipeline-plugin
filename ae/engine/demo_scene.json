@@ -1,0 +1,170 @@
+{
+  "base": "/Users/bogdan/Documents/Projects/Videos/bases/base_algoritms",
+  "audio": "/Users/bogdan/Documents/Projects/Video_BigO/audio/A2.wav",
+  "timeline": "/Users/bogdan/Documents/Projects/Video_BigO/audio/A2.timeline.json",
+  "tail": 0.8,
+  "comp": {
+    "name": "blocks_demo",
+    "width": 1920,
+    "height": 1080
+  },
+  "items": [
+    {
+      "block": "background_dark",
+      "always": true
+    },
+    {
+      "block": "text_reveal",
+      "at_word": 1,
+      "until_word": 13,
+      "params": {
+        "text": "Массив",
+        "x": 960,
+        "y": 130
+      }
+    },
+    {
+      "id": "arr",
+      "block": "array_cells",
+      "at_word": 2,
+      "until_word": 18,
+      "params": {
+        "values": [
+          7,
+          3,
+          9,
+          1,
+          5
+        ],
+        "x": 960,
+        "y": 420
+      }
+    },
+    {
+      "block": "hand_arrow",
+      "at_word": 8,
+      "until_word": 11,
+      "params": {
+        "target": "arr",
+        "index": 4,
+        "from": [
+          1640,
+          640
+        ],
+        "bend": 70
+      }
+    },
+    {
+      "block": "pointer_move",
+      "at_word": 9,
+      "until_word": 13,
+      "params": {
+        "target": "arr",
+        "steps": [
+          {
+            "index": 0,
+            "at_word": 9
+          },
+          {
+            "index": 1,
+            "at_word": 10
+          },
+          {
+            "index": 2,
+            "at_word": 11
+          }
+        ]
+      }
+    },
+    {
+      "block": "fill_cells",
+      "at_word": 9,
+      "until_word": 12,
+      "params": {
+        "target": "arr",
+        "steps": [
+          {
+            "index": 0,
+            "at_word": 9
+          },
+          {
+            "index": 1,
+            "at_word": 10
+          },
+          {
+            "index": 2,
+            "at_word": 11
+          }
+        ]
+      }
+    },
+    {
+      "block": "highlight_cell",
+      "at_word": 12,
+      "until_word": 14,
+      "params": {
+        "target": "arr",
+        "index": 2
+      }
+    },
+    {
+      "block": "swap_cells",
+      "at_word": 15,
+      "params": {
+        "target": "arr",
+        "a": 0,
+        "b": 4
+      }
+    },
+    {
+      "block": "code_panel",
+      "at_word": 14,
+      "params": {
+        "x": 1230,
+        "y": 800,
+        "width": 1000,
+        "size": 30,
+        "lines": [
+          "for (int i = 0; i < n; i++) {",
+          "    if (a[i] == x) return i;",
+          "}"
+        ],
+        "steps": [
+          {
+            "line": 0,
+            "at_word": 15
+          },
+          {
+            "line": 1,
+            "at_word": 17
+          }
+        ]
+      }
+    },
+    {
+      "block": "stagger_in",
+      "at_word": 16,
+      "params": {
+        "items": [
+          "Просто",
+          "Понятно",
+          "Медленно"
+        ],
+        "x": 360,
+        "y": 740,
+        "gap": 84,
+        "size": 50
+      }
+    },
+    {
+      "block": "object_pop",
+      "at_word": 18,
+      "params": {
+        "asset": "crown_gold",
+        "x": 360,
+        "y": 630,
+        "size": 110
+      }
+    }
+  ]
+}

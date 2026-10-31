@@ -10,6 +10,8 @@
 
 Маркеры по транскрипту ставит `ae/add_word_markers.jsx`, правки с маркеров обратно в JSON переносит `ae/update_transcript_from_markers.jsx`. Ревью делается до плана анимации: добавление и удаление слов меняет `i`. Слова с `manual: true` подрезка не трогает. После ревью `approve_transcript.py` замораживает транскрипт: ставит `status: approved` и `transcript_hash`, по которому следующие этапы проверяют актуальность. Навык `.claude/skills/after-effects` скопирован из `aedev-tools/adobe-agent-skills` (Apache-2.0).
 
+Движок `ae/engine/build_scene.jsx` строит композицию из `scene.json`, блоки берёт из базы. Время задаётся через `at_word`, `after` или `at`, плюс необязательный `delay`.
+
 Базы лежат в `~/Documents/Projects/Videos/bases/`. Ассеты и блоки меняются только через агента `librarian`.
 
 Поле `i` в `words` — контракт между этапами: его нельзя менять без пересчёта ссылок. При изменении формата JSON увеличивай `schema_version`.
