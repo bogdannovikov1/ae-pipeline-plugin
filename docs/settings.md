@@ -39,3 +39,4 @@ python3 plugin/scripts/settings.py show --video <папка видео>
 | `review.sheet_frame_width` | Ширина кадра на листе, px |
 | `base_update.every_fragments` | Этап `curate` на каждом N-м фрагменте; 0 отключает |
 | `base_update.min_repeats` | Со скольких повторов факт попадает в предложения |
+| `extend.gap_seconds` | Пауза между частями расширенного фрагмента, с |

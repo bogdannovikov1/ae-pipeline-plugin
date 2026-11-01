@@ -22,6 +22,8 @@ frames/round_N/         кадры, листы и index.json
 
 Слово: `i`, `word`, `start`, `end`, `start_frame`, `end_frame`, `confidence`, `needs_review`, `raw_start`, `raw_end`, необязательное `manual`. Номера `i` идут подряд с нуля, на них ссылаются все следующие этапы.
 
+После расширения появляется `parts`: `[{ "audio": "F1.wav", "at": 0, "first_word": 0 }, { "audio": "F1_p2.wav", "at": 27.9, "first_word": 79 }]`. Номера слов и время новой части продолжают старые. Часть живёт в `F1_p2.wav` и `F1_p2.timeline.json`, а `<f>.timeline.json` содержит всё.
+
 ## animation.json
 
 ```json
@@ -56,7 +58,7 @@ frames/round_N/         кадры, листы и index.json
 
 ## state.json
 
-`version`, `fragment`, `audio`, `rounds`, `stages`. Запись этапа: `status`, `note`, `inputs`, `outputs` (хэши файлов), `settings` (хэш настроек), `finished_at`.
+`version` (2), `fragment`, `audio`, `parts`, `rounds`, `stages`. Запись в `parts`: `audio`, `keep` (что расширение не должно изменить), `append` (была ли ручная доводка). Запись этапа: `status`, `note`, `inputs`, `outputs` (хэши файлов), `settings` (хэш настроек), `finished_at`.
 
 Статусы: `pending`, `running`, `review`, `approved`, `rejected`, `stale`. Файл меняет только `pipeline.py`.
 

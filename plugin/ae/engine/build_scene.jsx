@@ -81,16 +81,49 @@
         }
     }
 
-    function addVoice(scene) {
-        var voice = Engine.comp.layers.add(app.project.importFile(new ImportOptions(new File(scene.audio))));
-        voice.name = "voice";
+    // Each recorded part of a fragment gets its own voice layer at its place on the timeline.
+    function voiceParts(scene) {
+        var parts = Engine.timeline.parts;
+        if (!parts) {
+            return [{ audio: scene.audio, at: 0, first_word: 0 }];
+        }
+        var result = [];
+        var folder = new File(scene.timeline).parent.fsName;
+        for (var i = 0; i < parts.length; i++) {
+            result.push({
+                audio: i === 0 ? scene.audio : folder + "/" + parts[i].audio,
+                at: parts[i].at,
+                first_word: parts[i].first_word
+            });
+        }
+        return result;
+    }
+
+    function addVoice(part, number, lastWord) {
+        var voice = Engine.comp.layers.add(app.project.importFile(new ImportOptions(new File(part.audio))));
+        voice.name = number === 0 ? "voice" : "voice_" + (number + 1);
+        voice.startTime = part.at;
         var words = Engine.timeline.words;
         var markers = voice.property("ADBE Marker");
-        for (var i = 0; i < words.length; i++) {
+        for (var i = part.first_word; i < lastWord; i++) {
             var marker = new MarkerValue(words[i].word);
             marker.duration = words[i].end - words[i].start;
             marker.setParameters({ i: String(words[i].i) });
             markers.setValueAtTime(words[i].start, marker);
+        }
+    }
+
+    function addVoices(scene) {
+        var parts = voiceParts(scene);
+        for (var i = 0; i < parts.length; i++) {
+            var taken = false;
+            var name = i === 0 ? "voice" : "voice_" + (i + 1);
+            for (var n = 1; n <= Engine.comp.numLayers; n++) {
+                taken = taken || Engine.comp.layer(n).name === name;
+            }
+            if (!taken) {
+                addVoice(parts[i], i, i + 1 < parts.length ? parts[i + 1].first_word : Engine.timeline.words.length);
+            }
         }
     }
 
@@ -118,12 +151,64 @@
         return result;
     }
 
+    // Rebuilds get the suffix _2, _3: the newest item with the base name is the current one.
+    function findComp(name) {
+        var found = null;
+        for (var i = 1; i <= app.project.numItems; i++) {
+            var item = app.project.item(i);
+            if (item instanceof CompItem && (item.name === name || item.name.indexOf(name + "_") === 0)) {
+                if (!found || item.id > found.id) {
+                    found = item;
+                }
+            }
+        }
+        if (!found) {
+            throw new Error("Composition to extend not found: " + name);
+        }
+        return found;
+    }
+
+    // Layers that reached the end keep going, and the camera push stretches to the new end.
+    function lengthen(comp, duration) {
+        var old = comp.duration;
+        var frame = comp.frameDuration;
+        comp.duration = duration;
+        for (var i = 1; i <= comp.numLayers; i++) {
+            var layer = comp.layer(i);
+            if ((layer.hasVideo || layer instanceof CameraLayer) && layer.outPoint >= old - frame) {
+                layer.outPoint = duration;
+            }
+            if (layer instanceof CameraLayer && layer.position.numKeys > 1) {
+                var last = layer.position.numKeys;
+                var value = layer.position.keyValue(last);
+                layer.position.removeKey(last);
+                layer.position.setValueAtTime(duration, value);
+            }
+        }
+    }
+
+    // Keeps a finished composition with its manual edits and adds only the new items.
+    function append(scene, from) {
+        var words = Engine.timeline.words;
+        Engine.comp = findComp(scene.comp.name);
+        lengthen(Engine.comp, words[words.length - 1].end + scene.tail);
+        addVoices(scene);
+        for (var n = 0; n < from; n++) {
+            var old = scene.items[n];
+            Engine.starts[old.id || old.block + "_" + n] = old.always ? 0 : Engine.time(old);
+        }
+        for (var i = from; i < scene.items.length; i++) {
+            buildItem(scene.items[i], i);
+        }
+        Engine.comp.openInViewer();
+    }
+
     function build(scene) {
         var c = scene.comp;
         var words = Engine.timeline.words;
         var duration = words[words.length - 1].end + scene.tail;
         Engine.comp = app.project.items.addComp(freeName(c.name), c.width, c.height, 1, duration, Engine.tokens.motion.fps);
-        addVoice(scene);
+        addVoices(scene);
         for (var i = 0; i < scene.items.length; i++) {
             buildItem(scene.items[i], i);
         }
@@ -144,7 +229,11 @@
         var scene = prepare(path);
         app.beginUndoGroup(SCRIPT_NAME);
         try {
-            build(scene);
+            if ($.global.APPEND_FROM !== undefined) {
+                append(scene, parseInt($.global.APPEND_FROM, 10));
+            } else {
+                build(scene);
+            }
         } finally {
             app.endUndoGroup();
         }

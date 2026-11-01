@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "plugin" / "scri
 from approve_transcript import transcript_hash
 from base_scan import scan
 from capture import moments
+from extend_timeline import merge as merge_part
 from pipeline import Fragment, PipelineError
 from settings import load_settings, merge
 from validate import check_animation, check_scene, check_timeline
@@ -223,6 +224,103 @@ class BaseUpdate(Case):
         self.assertEqual(result["repeated_tokens"], {"motion.lead": 2})
 
 
+class Extend(Case):
+    def polished(self):
+        f = self.to_preflight()
+        self.report(1)
+        f.round()
+        f.start("polish")
+        self.write("F1.aep", "project")
+        f.done("polish")
+        f.approve("polish")
+        return f
+
+    def merged(self):
+        main = timeline("draft")
+        part = {"source": "F1_p2.wav", "text": "new", "words": [dict(timeline()["words"][0])],
+                "phrases": [{"i": 0, "text": "new", "start": 0, "end": 0.4, "first_word": 0, "last_word": 0}]}
+        main.update(source="F1.wav", text="old", fps=30)
+        merged = merge_part(main, part, 10.0)
+        merged["status"] = "approved"
+        merged["transcript_hash"] = transcript_hash(merged)
+        return merged
+
+    def test_merge_continues_numbers_and_time(self):
+        merged = self.merged()
+        self.assertEqual(merged["words"][-1]["i"], 4)
+        self.assertEqual(merged["words"][-1]["start"], 10.0)
+        self.assertEqual(merged["words"][-1]["start_frame"], 300)
+        self.assertEqual(merged["phrases"][-1]["first_word"], 4)
+        self.assertEqual(merged["parts"][1], {"audio": "F1_p2.wav", "at": 10.0, "first_word": 4})
+
+    def test_extend_runs_only_new_part(self):
+        f = self.polished()
+        self.write("F1_p2.wav", "new audio")
+        f.extend("F1_p2.wav")
+        action = f.next_action()
+        self.assertEqual(action["stage"], "transcript")
+        self.assertEqual(action["extension"]["first_word"], 4)
+        self.assertTrue(action["extension"]["append"])
+
+        f.start("transcript")
+        with self.assertRaises(PipelineError):
+            f.done("transcript")
+        merged = self.merged()
+        self.write("F1.timeline.json", merged)
+        f.done("transcript")
+        f.approve("transcript")
+
+        f.start("plan")
+        hash_ = merged["transcript_hash"]
+        self.write("F1.animation.json", {"transcript_hash": hash_, "beats": [{"at_word": 1}, {"at_word": 4}]})
+        with self.assertRaises(PipelineError):
+            f.done("plan")
+        self.write("F1.animation.json", {"transcript_hash": hash_, "beats": [{"at_word": 0}, {"at_word": 4}]})
+        f.done("plan")
+        f.approve("plan")
+
+        f.start("build")
+        old = self.scene()["items"]
+        self.write("F1.scene.json", self.scene(items=[{"id": "x", "block": "label", "at_word": 1}]))
+        with self.assertRaises(PipelineError):
+            f.done("build")
+        new = {"id": "b", "block": "label", "at_word": 4, "params": {"target": "a"}}
+        self.write("F1.scene.json", self.scene(items=old + [new]))
+        with self.assertRaises(PipelineError):
+            f.done("build")
+        new["params"] = {}
+        self.write("F1.scene.json", self.scene(items=old + [new]))
+        f.done("build")
+        self.assertEqual(f.next_action()["extension"]["from_time"], 10.0)
+
+    def test_old_words_are_protected(self):
+        f = self.polished()
+        self.write("F1_p2.wav", "new audio")
+        f.extend("F1_p2.wav")
+        f.start("transcript")
+        merged = self.merged()
+        merged["words"][0]["word"] = "другое"
+        self.write("F1.timeline.json", merged)
+        with self.assertRaises(PipelineError):
+            f.done("transcript")
+
+    def test_needs_approved_plan_and_audio(self):
+        f = self.fragment()
+        with self.assertRaises(PipelineError):
+            f.extend("F1_p2.wav")
+        f = self.polished()
+        with self.assertRaises(PipelineError):
+            f.extend("нет.wav")
+
+    def test_full_rebuild_before_polish(self):
+        f = self.to_preflight()
+        self.report(1)
+        f.round()
+        self.write("F1_p2.wav", "new audio")
+        f.extend("F1_p2.wav")
+        self.assertFalse(f.next_action()["extension"]["append"])
+
+
 class Moments(Case):
     def test_order_offsets_and_limit(self):
         scene = {"items": [{"always": True}, {"id": "a", "at_word": 1}, {"after": "a", "delay": 0.2}, {"at": 5}]}
@@ -232,6 +330,7 @@ class Moments(Case):
         self.assertIn(1.1, times)
         self.assertEqual(len(moments(scene, words, 0.1, [0, 0.25], 3, 10)), 3)
         self.assertEqual(max(moments(scene, words, 0.1, [0, 0.25], 100, 5.1)), 5.1)
+        self.assertEqual(moments(scene, words, 0.1, [0], 100, 10, from_time=4), [5])
 
 
 class Rounds(Case):

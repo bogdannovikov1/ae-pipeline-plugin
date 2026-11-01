@@ -40,5 +40,8 @@
   "base_update": {
     "every_fragments": 1,
     "min_repeats": 2
+  },
+  "extend": {
+    "gap_seconds": 0.4
   }
 }

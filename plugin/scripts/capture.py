@@ -30,7 +30,7 @@ def item_start(item, words, starts, lead):
     return None
 
 
-def moments(scene, words, lead, offsets, limit, duration):
+def moments(scene, words, lead, offsets, limit, duration, from_time=0):
     """Возвращает моменты съёмки вокруг начала элементов, равномерно прореженные до лимита."""
     times = set()
     starts = {}
@@ -42,7 +42,7 @@ def moments(scene, words, lead, offsets, limit, duration):
             continue
         starts[item.get("id") or f"{item.get('block')}_{number}"] = start
         times.update(round(min(duration, max(0, start + offset)), 3) for offset in offsets)
-    ordered = sorted(times)
+    ordered = sorted(t for t in times if t >= from_time)
     if len(ordered) <= limit:
         return ordered
     step = (len(ordered) - 1) / max(1, limit - 1)
@@ -78,6 +78,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("scene", type=Path)
     parser.add_argument("--round", type=int, default=1, help="номер круга предревью")
+    parser.add_argument("--from-time", type=float, default=0, help="снимать только с этого момента, с")
     parser.add_argument("--video", type=Path, help="папка видео с её настройками")
     args = parser.parse_args()
 
@@ -88,7 +89,7 @@ def main():
     words = read_json(resolve_path(scene["timeline"], scene_path.parent))["words"]
     tokens = read_json(resolve_base(scene["base"], settings) / "tokens.json")
     lead = scene.get("tokens", {}).get("motion", {}).get("lead", tokens["motion"]["lead"])
-    times = moments(scene, words, lead, review["offsets"], review["max_frames"], words[-1]["end"] + scene["tail"])
+    times = moments(scene, words, lead, review["offsets"], review["max_frames"], words[-1]["end"] + scene["tail"], args.from_time)
 
     folder = scene_path.parent / "frames" / f"round_{args.round}"
     folder.mkdir(parents=True, exist_ok=True)

@@ -83,13 +83,17 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("command", choices=["build", "script"])
     parser.add_argument("path", type=Path, help="сцена для build или JSX для script")
+    parser.add_argument("--append-from", type=int, help="для build: дополнить композицию элементами с этого номера")
     parser.add_argument("--video", type=Path, help="папка видео с её настройками")
     args = parser.parse_args()
 
     settings = load_settings(args.video)
     try:
         if args.command == "build":
-            run_jsx(BUILD_SCRIPT, {"SCENE_PATH": args.path.resolve(), "BASES_DIR": bases_dir(settings)}, settings)
+            values = {"SCENE_PATH": args.path.resolve(), "BASES_DIR": bases_dir(settings)}
+            if args.append_from is not None:
+                values["APPEND_FROM"] = args.append_from
+            run_jsx(BUILD_SCRIPT, values, settings)
         else:
             run_jsx(args.path.resolve(), {}, settings)
     except RuntimeError as error:

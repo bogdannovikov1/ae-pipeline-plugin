@@ -20,7 +20,7 @@ STATE_FILE = "state.json"
 REPORTS_DIR = "reviews"
 AUDIO_TYPES = (".wav", ".mp3", ".m4a", ".aif", ".aiff")
 SEVERITIES = ["minor", "major", "critical"]
-STATE_VERSION = 1
+STATE_VERSION = 2
 
 
 class PipelineError(Exception):
@@ -65,6 +65,7 @@ class Fragment:
             "fragment": self.name,
             "audio": audio,
             "rounds": 0,
+            "parts": [],
             "stages": {stage["id"]: {"status": "pending", "note": None} for stage in self.stages},
         }
         self.save()
@@ -83,8 +84,17 @@ class Fragment:
     def status(self, stage_id):
         return self.state["stages"][stage_id]["status"]
 
+    def audios(self):
+        return [self.state["audio"]] + [part["audio"] for part in self.state.get("parts", [])]
+
     def names(self, patterns):
-        return [p.format(f=self.name, audio=self.state["audio"]) for p in patterns]
+        names = []
+        for pattern in patterns:
+            if pattern == "{audio}":
+                names += self.audios()
+            else:
+                names.append(pattern.format(f=self.name))
+        return names
 
     def hashes(self, patterns):
         """Хэши существующих файлов; отсутствующий файл получает None."""
@@ -143,7 +153,98 @@ class Fragment:
             names = {"timeline": f"{self.name}.timeline.json"}
             path = self.folder / self.names(stage["outputs"])[0]
             errors = run_check(stage["validate"], path, self.folder, names, self.settings, final)
+        if not errors and self.state.get("parts"):
+            errors = self.check_extension(stage)
         return errors
+
+    def read(self, suffix):
+        path = self.folder / f"{self.name}.{suffix}.json"
+        return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
+
+    def snapshot(self):
+        """Запоминает, что расширение не должно изменить."""
+        words = self.read("timeline")["words"]
+        beats = (self.read("animation") or {}).get("beats", [])
+        items = (self.read("scene") or {}).get("items", [])
+        return {
+            "first_word": len(words),
+            "words": list_hash(kept_words(words)),
+            "beats_from": len(beats),
+            "beats": list_hash(beats),
+            "items_from": len(items),
+            "items": list_hash(items),
+        }
+
+    def check_extension(self, stage):
+        """Этап добавляет только новое: старое должно остаться как было."""
+        keep = self.state["parts"][-1]["keep"]
+        if stage["id"] == "transcript":
+            words = self.read("timeline")["words"]
+            if len(words) <= keep["first_word"]:
+                return ["новая часть не добавлена в транскрипт: extend_timeline.py"]
+            if list_hash(kept_words(words[:keep["first_word"]])) != keep["words"]:
+                return ["расширение изменило слова первой части"]
+        if stage["id"] == "plan":
+            beats = self.read("animation")["beats"]
+            if list_hash(beats[:keep["beats_from"]]) != keep["beats"]:
+                return ["расширение изменило старые биты плана"]
+        if stage["id"] == "build":
+            return self.check_items(keep)
+        return []
+
+    def check_items(self, keep):
+        items = self.read("scene")["items"]
+        start = keep["items_from"]
+        if list_hash(items[:start]) != keep["items"]:
+            return ["расширение изменило старые элементы сцены"]
+        if not self.state["parts"][-1]["append"]:
+            return []
+        old = {item.get("id") or f"{item.get('block')}_{n}" for n, item in enumerate(items[:start])}
+        return [
+            f"{item.get('id')}: цель {item['params']['target']} собрана раньше, в дополняемой композиции она недоступна"
+            for item in items[start:]
+            if item.get("params", {}).get("target") in old
+        ]
+
+    def extend(self, audio):
+        """Начинает новую часть фрагмента: всё утверждённое остаётся, этапы идут только для добавленного."""
+        self.refresh()
+        if self.status("transcript") != "approved" or self.status("plan") != "approved":
+            raise PipelineError("Расширять можно фрагмент с утверждённым транскриптом и планом")
+        if self.status("build") == "running" or self.status("preflight") == "running":
+            raise PipelineError("Сначала завершите текущий этап")
+        if not (self.folder / audio).is_file():
+            raise PipelineError(f"Нет файла {audio} в {self.folder}")
+        if audio in self.audios():
+            raise PipelineError(f"Часть уже есть: {audio}")
+        self.state.setdefault("parts", []).append({
+            "audio": audio,
+            "keep": self.snapshot(),
+            "append": self.status("polish") == "approved",
+        })
+        self.state["rounds"] = 0
+        for stage in self.stages:
+            self.state["stages"][stage["id"]] = {"status": "pending", "note": None}
+        self.save()
+
+    def extension(self):
+        """Что должен знать исполнитель этапа, когда идёт новая часть."""
+        if not self.state.get("parts"):
+            return None
+        part = self.state["parts"][-1]
+        keep = part["keep"]
+        result = {
+            "audio": part["audio"],
+            "timeline": f"{Path(part['audio']).stem}.timeline.json",
+            "first_word": keep["first_word"],
+            "beats_from": keep["beats_from"],
+            "items_from": keep["items_from"],
+            "append": part["append"],
+        }
+        words = self.read("timeline")["words"]
+        if len(words) > keep["first_word"]:
+            result["from_time"] = words[keep["first_word"]]["start"]
+        return result
 
     def start(self, stage_id, force=False):
         self.refresh()
@@ -274,6 +375,8 @@ class Fragment:
                 action["action"] = "resume"
             else:
                 action["action"] = "start"
+            if self.extension():
+                action["extension"] = self.extension()
             if stage["review"] == "rounds":
                 number = self.state["rounds"] + 1
                 action["report"] = str(self.report_path(number).relative_to(self.folder))
@@ -299,6 +402,16 @@ class Fragment:
         }
 
 
+def list_hash(items):
+    text = json.dumps(items, ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def kept_words(words):
+    """Сравниваем то, что определяет слово на таймлайне."""
+    return [[w["i"], w["word"], w["start"], w["end"]] for w in words]
+
+
 def finding_key(finding):
     """Находка считается той же, если совпали закон и момент."""
     return finding.get("rule"), finding.get("time")
@@ -306,11 +419,11 @@ def finding_key(finding):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("command", choices=["init", "status", "next", "start", "done", "approve", "reject", "round"])
+    parser.add_argument("command", choices=["init", "status", "next", "start", "done", "approve", "reject", "round", "extend"])
     parser.add_argument("video", type=Path, help="папка видео")
     parser.add_argument("fragment", help="имя фрагмента")
     parser.add_argument("stage", nargs="?", help="этап для start, done, approve, reject")
-    parser.add_argument("--audio", help="для init: имя файла записи в папке фрагмента")
+    parser.add_argument("--audio", help="для init и extend: имя файла записи в папке фрагмента")
     parser.add_argument("--note", help="для reject: что исправить")
     parser.add_argument("--force", action="store_true", help="для start: пересобрать этап с ручными правками")
     args = parser.parse_args()
@@ -328,6 +441,11 @@ def main():
             result = fragment.next_action()
         elif args.command == "round":
             result = fragment.round()
+        elif args.command == "extend":
+            if not args.audio:
+                parser.error("укажите --audio")
+            fragment.extend(args.audio)
+            result = fragment.next_action()
         else:
             if not args.stage:
                 parser.error("укажите этап")
