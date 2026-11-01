@@ -74,6 +74,9 @@ def main():
     starts = [t for name, t in read_json(journal)["starts"].items() if t > 0]
     times = moments(starts, review["offsets"], review["max_frames"], words[-1]["end"] + scene["tail"], args.from_time)
 
+    if not times:
+        sys.exit("На этом отрезке нет элементов: снимать нечего")
+
     folder = scene_path.parent / "frames" / (args.label or f"round_{args.round}")
     folder.mkdir(parents=True, exist_ok=True)
     for old in folder.glob("*"):
