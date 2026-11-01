@@ -294,7 +294,9 @@ $.global.Engine = (function () {
         var middle = t + span / 2;
         var start = Math.max(0, middle - audible / 2);
         layer.startTime = start;
-        layer.audio.audioLevels.setValue([E.tokens.sounds.level, E.tokens.sounds.level]);
+        var levels = E.tokens.sounds.levels || {};
+        var level = levels[name] === undefined ? E.tokens.sounds.level : levels[name];
+        layer.audio.audioLevels.setValue([level, level]);
         E.soundLog.push({
             item: E.current,
             sound: id,
