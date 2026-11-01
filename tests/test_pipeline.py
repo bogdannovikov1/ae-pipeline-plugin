@@ -7,6 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "plugin" / "scripts"))
 
 from approve_transcript import transcript_hash
+from base_index import asset_lines, block_lines
 from base_scan import scan
 from capture import moments
 from extend_timeline import merge as merge_part
@@ -319,6 +320,17 @@ class Extend(Case):
         self.write("F1_p2.wav", "new audio")
         f.extend("F1_p2.wav")
         self.assertFalse(f.next_action()["extension"]["append"])
+
+
+class BaseIndex(Case):
+    def test_lists_blocks_and_assets(self):
+        base = self.bases / "b"
+        (base / "blocks" / "label" / "block.json").write_text(
+            json.dumps({"id": "label", "description": "Подпись", "params": {"text": "текст", "x": "X"}}))
+        (base / "assets").mkdir()
+        (base / "assets" / "assets.json").write_text(json.dumps([{"id": "pop", "type": "audio", "description": "Щелчок"}]))
+        self.assertEqual(list(block_lines(base)), ["label (text, x): Подпись"])
+        self.assertEqual(list(asset_lines(base)), ["pop [audio]: Щелчок"])
 
 
 class Moments(Case):
