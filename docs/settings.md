@@ -32,8 +32,8 @@ python3 plugin/scripts/settings.py show --video <папка видео>
 | `ae.launch_timeout` | Ожидание запуска After Effects, с |
 | `ae.review_width`, `ae.review_height`, `ae.review_fps` | Композиция ревью; fps берётся из транскрипта, если он там есть |
 | `ae.autosave_projects` | Папки, где проект можно сохранять без вопроса |
-| `review.max_rounds` | Максимум кругов предревью без автора |
-| `review.block_on` | С какой серьёзности находка запускает исправление: `minor`, `major`, `critical`; `none` только отчёт |
+| `review.max_rounds` | Максимум кругов предревью |
+| `review.block_on` | С какой серьёзности находка предлагается к исправлению: `minor`, `major`, `critical`; `none` только отчёт |
 | `review.max_frames` | Лимит кадров на круг |
 | `review.offsets` | Сдвиги кадров от начала элемента, с |
 | `review.frame_timeout` | Ожидание сохранения кадров, с |

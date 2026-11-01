@@ -78,6 +78,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("scene", type=Path)
     parser.add_argument("--round", type=int, default=1, help="номер круга предревью")
+    parser.add_argument("--label", help="имя папки кадров вместо round_N, для разового ревью")
     parser.add_argument("--from-time", type=float, default=0, help="снимать только с этого момента, с")
     parser.add_argument("--video", type=Path, help="папка видео с её настройками")
     args = parser.parse_args()
@@ -91,7 +92,7 @@ def main():
     lead = scene.get("tokens", {}).get("motion", {}).get("lead", tokens["motion"]["lead"])
     times = moments(scene, words, lead, review["offsets"], review["max_frames"], words[-1]["end"] + scene["tail"], args.from_time)
 
-    folder = scene_path.parent / "frames" / f"round_{args.round}"
+    folder = scene_path.parent / "frames" / (args.label or f"round_{args.round}")
     folder.mkdir(parents=True, exist_ok=True)
     for old in folder.glob("*"):
         old.unlink()

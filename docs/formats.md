@@ -11,6 +11,7 @@ state.json              состояние этапов
 <f>.scene.json          сцена для движка
 blocks/<id>/            блоки этого видео, главнее блоков базы
 reviews/round_N.json    отчёты предревью
+reviews/manual_N.json   отчёты разового ревью
 frames/round_N/         кадры, листы и index.json
 <f>.aep                 проект фрагмента: ревью маркеров, сборка, доводка
 <f>.base_proposals.md   предложения для базы

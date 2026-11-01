@@ -329,6 +329,13 @@ class Fragment:
         self.seal(self.stage("build"), "approved")
         self.seal(self.stage("preflight"), "approved")
 
+    def finish(self, stage_id):
+        """Автор решил больше не запускать ревью: этап закрывается с текущей сценой."""
+        stage = self.stage(stage_id)
+        if stage["review"] != "rounds" or self.status(stage_id) != "running":
+            raise PipelineError(f"Этап {stage_id} нельзя завершить: {self.status(stage_id)}")
+        self.finish_rounds()
+
     def round(self):
         """Учитывает отчёт очередного круга и говорит, исправлять или передавать автору."""
         if self.status("preflight") != "running":
@@ -435,10 +442,10 @@ def finding_key(finding):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("command", choices=["init", "status", "next", "start", "done", "approve", "reject", "round", "extend", "skip"])
+    parser.add_argument("command", choices=["init", "status", "next", "start", "done", "approve", "reject", "round", "extend", "skip", "finish"])
     parser.add_argument("video", type=Path, help="папка видео")
     parser.add_argument("fragment", help="имя фрагмента")
-    parser.add_argument("stage", nargs="?", help="этап для start, done, approve, reject, skip")
+    parser.add_argument("stage", nargs="?", help="этап для start, done, approve, reject, skip, finish")
     parser.add_argument("--audio", help="для init и extend: имя файла записи в папке фрагмента")
     parser.add_argument("--note", help="для reject: что исправить")
     parser.add_argument("--force", action="store_true", help="для start: пересобрать этап с ручными правками")
@@ -469,6 +476,8 @@ def main():
                 fragment.start(args.stage, args.force)
             elif args.command == "skip":
                 fragment.skip(args.stage)
+            elif args.command == "finish":
+                fragment.finish(args.stage)
             elif args.command == "done":
                 fragment.done(args.stage)
             elif args.command == "approve":

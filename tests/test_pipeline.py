@@ -352,6 +352,14 @@ class OptionalPreflight(Case):
         self.assertTrue(f.state["stages"]["preflight"]["skipped"])
         self.assertEqual(f.next_action()["stage"], "polish")
 
+    def test_author_stops_after_findings(self):
+        f = self.to_preflight()
+        self.report(1, Rounds.major)
+        self.assertEqual(f.round()["decision"], "fix")
+        self.write("F1.scene.json", self.scene(tail=2))
+        f.finish("preflight")
+        self.assertEqual(f.next_action()["stage"], "polish")
+
     def test_only_optional_stage(self):
         with self.assertRaises(PipelineError):
             self.built().skip("polish")
