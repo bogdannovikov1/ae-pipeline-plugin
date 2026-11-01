@@ -1,7 +1,7 @@
 // Scene engine: shared helpers for animation blocks. Blocks live in the base folder.
 
 $.global.Engine = (function () {
-    var E = { blocks: {}, store: {}, starts: {}, footage: {}, tokens: null, assets: [], comp: null, base: "", timeline: null };
+    var E = { blocks: {}, store: {}, starts: {}, footage: {}, soundLog: [], current: "", tokens: null, assets: [], comp: null, base: "", timeline: null };
 
     // Returns a copy of base with patch applied over it: one item can restyle anything.
     E.overlay = function (base, patch) {
@@ -259,15 +259,36 @@ $.global.Engine = (function () {
         throw new Error("Unknown asset: " + id);
     };
 
-    // A block may name its sound; false in params turns it off.
-    E.sound = function (params, name, t) {
+    function audibleLength(id, layer) {
+        for (var i = 0; i < E.assets.length; i++) {
+            if (E.assets[i].id === id && E.assets[i].audible) {
+                return E.assets[i].audible;
+            }
+        }
+        return layer.source.duration;
+    }
+
+    // A sound lands on the last moment of the animation: it ends with it, or a hair later.
+    // length is how long the animation runs from t. A block may name its sound; false in params turns it off.
+    E.sound = function (params, name, t, length) {
         var id = params.sound === undefined ? E.tokens.sounds[name] : params.sound;
         if (!id) {
             return [];
         }
+        var animationEnd = t + (length === undefined ? E.tokens.motion.pop_duration : length);
         var layer = E.comp.layers.add(E.asset(id));
-        layer.startTime = t;
+        var audible = audibleLength(id, layer);
+        var start = Math.max(0, animationEnd + (E.tokens.sounds.tail || 0) - audible);
+        layer.startTime = start;
         layer.audio.audioLevels.setValue([E.tokens.sounds.level, E.tokens.sounds.level]);
+        E.soundLog.push({
+            item: E.current,
+            sound: id,
+            event: name,
+            start: Math.round(start * 1000) / 1000,
+            end: Math.round((start + audible) * 1000) / 1000,
+            animation_end: Math.round(animationEnd * 1000) / 1000
+        });
         return [layer];
     };
 

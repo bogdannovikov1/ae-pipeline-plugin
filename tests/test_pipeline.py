@@ -13,7 +13,8 @@ from capture import moments
 from extend_timeline import merge as merge_part
 from pipeline import Fragment, PipelineError
 from settings import load_settings, merge
-from view import review_lines, scene_lines, text_lines, timing_warnings
+from sound_measure import trailing_start
+from view import sound_log_path, sound_warnings, review_lines, scene_lines, text_lines, timing_warnings
 from setup_base import STARTER, create_base
 from validate import check_animation, check_scene, check_timeline
 
@@ -465,10 +466,36 @@ class Starter(Case):
 
     def test_starter_is_complete_and_has_no_sounds(self):
         tokens = json.loads((STARTER / "tokens.json").read_text())
-        self.assertEqual({k: v for k, v in tokens["sounds"].items() if k != "level" and v}, {})
+        self.assertEqual({k: v for k, v in tokens["sounds"].items() if k not in ("level", "tail") and v}, {})
         for block in (STARTER / "blocks").iterdir():
             self.assertTrue((block / "block.jsxinc").is_file(), block.name)
             self.assertTrue((block / "block.json").is_file(), block.name)
+
+
+class Sounds(Case):
+    timing = {"sound_max_tail": 0.12, "sound_min_gap": 0.3}
+
+    def sound(self, item, end, animation_end):
+        return {"item": item, "sound": "pop", "end": end, "animation_end": animation_end}
+
+    def test_good_sound_passes(self):
+        self.assertEqual(sound_warnings([self.sound("a", 1.05, 1.0)], self.timing), [])
+
+    def test_ends_too_early_or_late(self):
+        self.assertIn("раньше", sound_warnings([self.sound("a", 0.8, 1.0)], self.timing)[0])
+        self.assertIn("позже", sound_warnings([self.sound("a", 1.4, 1.0)], self.timing)[0])
+
+    def test_sounds_in_a_row(self):
+        sounds = [self.sound("a", 1.0, 1.0), self.sound("b", 1.1, 1.1)]
+        self.assertIn("подряд", sound_warnings(sounds, self.timing)[0])
+
+    def test_trailing_silence(self):
+        log = "silence_start: 0.24\nsilence_end: 0.43"
+        self.assertEqual(trailing_start(log, 0.432), 0.24)
+        self.assertEqual(trailing_start("silence_start: 0.1\nsilence_end: 0.2", 1.0), 1.0)
+
+    def test_log_path(self):
+        self.assertEqual(sound_log_path(Path("F1.scene.json")).name, "F1.sounds.json")
 
 
 class Moments(Case):

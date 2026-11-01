@@ -18,7 +18,7 @@ Engine.register("asset_value", function (params, at) {
         }
         Engine.float(layer);
         layers.push(layer);
-        sounds = sounds.concat(Engine.sound(params, "pop", t));
+        sounds = sounds.concat(Engine.sound(params, "pop", t, 0.1));
     }
     return layers.concat(sounds);
 });

@@ -60,7 +60,7 @@ var Timeline = (function () {
             throw new Error("Cannot write the transcript. Enable Settings > Scripting & Expressions > " +
                 "Allow Scripts to Write Files and Access Network.");
         }
-        if (!file.copy(backupPath) || !temp.copy(file.fsName)) {
+        if ((backupPath && file.exists && !file.copy(backupPath)) || !temp.copy(file.fsName)) {
             temp.remove();
             throw new Error("Cannot replace file: " + file.fsName);
         }

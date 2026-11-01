@@ -13,5 +13,5 @@ Engine.register("highlight_cell", function (params, at) {
     Engine.fadeIn(ring, at, Engine.tokens.motion.pop_duration * 0.5);
     var over = Engine.tokens.motion.pop_overshoot;
     Engine.keys(box.scale, [at, at + 0.15, at + 0.4], [[100, 100, 100], [over, over, 100], [100, 100, 100]]);
-    return [ring].concat(Engine.sound(params, "highlight", at));
+    return [ring].concat(Engine.sound(params, "highlight", at, Engine.tokens.motion.pop_duration * 0.5));
 });

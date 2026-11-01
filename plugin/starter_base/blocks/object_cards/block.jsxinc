@@ -28,5 +28,5 @@ Engine.register("object_cards", function (params, at, id) {
         cards.push(card);
     }
     Engine.store[id] = { cards: cards, width: width, height: height };
-    return layers.concat(Engine.sound(params, "group", at));
+    return layers.concat(Engine.sound(params, "group", at, (params.items.length - 1) * motion.stagger + motion.pop_duration));
 });

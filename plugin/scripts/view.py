@@ -6,9 +6,12 @@
     python3 view.py text F1.timeline.json --review
     python3 view.py scene F1.scene.json
     python3 view.py timing F1.scene.json
+    python3 view.py sounds F1.scene.json
     python3 view.py hash F1.timeline.json
 """
 import argparse
+import re
+import sys
 from pathlib import Path
 
 from settings import load_settings
@@ -115,9 +118,30 @@ def timing_warnings(scene, data, tokens, timing):
     return warnings
 
 
+def sound_log_path(scene):
+    return scene.with_name(re.sub(r"(\.scene)?\.json$", ".sounds.json", scene.name))
+
+
+def sound_warnings(sounds, timing):
+    """Звук должен заканчиваться вместе с анимацией или чуть позже, а события не звучать подряд."""
+    warnings = []
+    for sound in sounds:
+        late = sound["end"] - sound["animation_end"]
+        if late < -0.01:
+            warnings.append(f"{sound['item']}: {sound['sound']} кончается раньше анимации на {-late:.2f} с")
+        elif late > timing["sound_max_tail"]:
+            warnings.append(f"{sound['item']}: {sound['sound']} кончается позже анимации на {late:.2f} с")
+    ordered = sorted(sounds, key=lambda sound: sound["end"])
+    for first, second in zip(ordered, ordered[1:]):
+        gap = second["end"] - first["end"]
+        if gap < timing["sound_min_gap"]:
+            warnings.append(f"{first['item']} и {second['item']}: звуки подряд, разрыв {gap:.2f} с, отключите один: sound false")
+    return warnings
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("command", choices=["text", "scene", "timing", "hash"])
+    parser.add_argument("command", choices=["text", "scene", "timing", "sounds", "hash"])
     parser.add_argument("path", type=Path)
     parser.add_argument("--from-word", type=int, default=0)
     parser.add_argument("--to-word", type=int)
@@ -131,6 +155,11 @@ def main():
     elif args.command == "text":
         data = read_json(args.path)
         lines = review_lines(data) if args.review else text_lines(data, timing, args.from_word, args.to_word)
+    elif args.command == "sounds":
+        log = sound_log_path(args.path.resolve())
+        if not log.is_file():
+            sys.exit(f"Нет журнала звуков {log}: он появляется после сборки")
+        lines = sound_warnings(read_json(log)["sounds"], timing) or ["Звуки в норме"]
     else:
         path = args.path.resolve()
         scene = read_json(path)

@@ -14,5 +14,5 @@ Engine.register("strip_value", function (params, at) {
     var pace = params.duration || 0.3;
     Engine.keys(layer.scale, [at, at + pace * 0.6, at + pace], [[0, 0, 100], [116, 116, 100], [100, 100, 100]]);
     Engine.fadeIn(layer, at, pace * 0.4);
-    return [layer].concat(Engine.sound(params, "pop", at));
+    return [layer].concat(Engine.sound(params, "pop", at, pace));
 });

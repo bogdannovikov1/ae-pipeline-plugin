@@ -21,7 +21,7 @@ Engine.register("strip_cursor", function (params, at) {
             cursor.position.setValueAtTime(t - move, [from, y, -3]);
             cursor.position.setValueAtTime(t, [x, y, -3]);
         }
-        sounds = sounds.concat(Engine.sound(params, "pop", t));
+        sounds = sounds.concat(Engine.sound(params, "pop", t - (i === 0 ? 0 : move), i === 0 ? 0.2 : move));
     }
     Engine.smooth(cursor.position);
     Engine.glow(cursor, true);

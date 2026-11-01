@@ -7,5 +7,5 @@ Engine.register("fly_asset", function (params, at, id) {
     // The spring reaches the target by the word.
     var start = Engine.spring(layer, at, params.from, params.to);
     Engine.shadow(layer);
-    return [layer].concat(Engine.sound(params, "move", start));
+    return [layer].concat(Engine.sound(params, "move", start, at - start));
 });

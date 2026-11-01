@@ -28,5 +28,5 @@ Engine.register("text_reveal", function (params, at) {
         Engine.keys(bar.scale, [start + 0.1, start + 0.1 + motion.reveal_duration], [[0, 100, 100], [100, 100, 100]]);
         layers.push(bar);
     }
-    return layers.concat(Engine.sound(params, "text", start));
+    return layers.concat(Engine.sound(params, "text", start, motion.reveal_duration));
 });

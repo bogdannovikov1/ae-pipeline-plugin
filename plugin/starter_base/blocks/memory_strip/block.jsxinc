@@ -33,5 +33,5 @@ Engine.register("memory_strip", function (params, at, id) {
     }
     Engine.store[id] = { holder: holder, start_x: params.start_x, step: params.step, size: size, y: params.y };
     var start = Engine.spring(holder, at, [params.slide, 0], [0, 0]);
-    return layers.concat(Engine.sound(params, "move", start), Engine.sound(params, "group", at));
+    return layers.concat(Engine.sound(params, "move", start, at - start));
 });

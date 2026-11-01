@@ -80,5 +80,5 @@ Engine.register("choice_rows", function (params, at) {
         Engine.float(rows[i].label);
         Engine.float(rows[i].hint);
     }
-    return layers.concat(Engine.sound(params, "group", at));
+    return layers.concat(Engine.sound(params, "group", at, (rows.length - 1) * motion.stagger * 2 + motion.pop_duration * 0.5));
 });

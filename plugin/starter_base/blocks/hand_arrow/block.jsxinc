@@ -50,5 +50,5 @@ Engine.register("hand_arrow", function (params, at) {
         Engine.float(label);
         layers.push(label);
     }
-    return layers.concat(Engine.sound(params, "arrow", at));
+    return layers.concat(Engine.sound(params, "arrow", at, motion.arrow_duration));
 });

@@ -26,7 +26,7 @@ Engine.register("pointer_move", function (params, at) {
     Engine.float(layer);
     var sounds = Engine.sound(params, "pop", start);
     for (var s = 1; s < params.steps.length; s++) {
-        sounds = sounds.concat(Engine.sound(params, "move", Engine.time(params.steps[s])));
+        sounds = sounds.concat(Engine.sound(params, "move", Engine.time(params.steps[s]), motion.move_duration));
     }
     return [layer].concat(sounds);
 });

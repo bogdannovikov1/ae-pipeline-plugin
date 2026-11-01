@@ -23,5 +23,5 @@ Engine.register("formula", function (params, at) {
         layers.push(layer);
         x += width;
     }
-    return layers.concat(Engine.sound(params, "pop", at));
+    return layers.concat(Engine.sound(params, "pop", at, 0.12));
 });

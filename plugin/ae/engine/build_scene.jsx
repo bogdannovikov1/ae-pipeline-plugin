@@ -52,6 +52,7 @@
         Engine.store = {};
         Engine.starts = {};
         Engine.footage = {};
+        Engine.soundLog = [];
         return scene;
     }
 
@@ -59,6 +60,7 @@
         var id = item.id || item.block + "_" + index;
         var at = item.always ? 0 : Engine.time(item);
         Engine.starts[id] = at;
+        Engine.current = id;
         var tokens = Engine.tokens;
         var layers;
         Engine.tokens = Engine.overlay(tokens, item.tokens || {});
@@ -237,6 +239,7 @@
         } finally {
             app.endUndoGroup();
         }
+        Timeline.writeJson(new File(path.replace(/(\.scene)?\.json$/, ".sounds.json")), { sounds: Engine.soundLog });
         if (!quiet) {
             alert("Done: " + Engine.comp.name + ". Items: " + scene.items.length, SCRIPT_NAME);
         }

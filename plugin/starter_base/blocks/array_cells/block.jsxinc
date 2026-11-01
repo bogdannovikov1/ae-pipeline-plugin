@@ -62,5 +62,5 @@ Engine.register("array_cells", function (params, at, id) {
         cells.push(box);
     }
     Engine.store[id] = { cells: cells, labels: labels, parts: parts, cell: cell, step: step, firstX: firstX, y: params.y };
-    return layers.concat(Engine.sound(params, "group", at));
+    return layers.concat(Engine.sound(params, "group", at, (count - 1) * motion.stagger + motion.pop_duration));
 });

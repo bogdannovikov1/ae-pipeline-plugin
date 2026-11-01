@@ -30,5 +30,5 @@ Engine.register("swap_cells", function (params, at) {
     var parts = row.parts[params.a];
     row.parts[params.a] = row.parts[params.b];
     row.parts[params.b] = parts;
-    return Engine.sound(params, "swap", at);
+    return Engine.sound(params, "swap", at, duration);
 });

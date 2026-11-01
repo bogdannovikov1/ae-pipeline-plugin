@@ -15,5 +15,5 @@ Engine.register("strip_frame", function (params, at) {
     Engine.keys(trim.property("ADBE Vector Trim End"), [at, at + params.duration], [0, 100]);
     Engine.glow(frame, true, "accent_green");
     Engine.float(frame);
-    return [frame].concat(Engine.sound(params, "move", at));
+    return [frame].concat(Engine.sound(params, "move", at, params.duration));
 });

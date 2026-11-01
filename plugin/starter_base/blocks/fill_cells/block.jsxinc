@@ -40,7 +40,7 @@ Engine.register("fill_cells", function (params, at, id, item) {
         paint(Engine.rectFill(cell.edge), edgeColor.concat([1]), t, off);
         paint(cell.ink, inkColor.concat([1]), t, off);
         paint(cell.shine.opacity, motion.fill_shine, t, off);
-        sounds = sounds.concat(Engine.sound(params, "scan", t));
+        sounds = sounds.concat(Engine.sound(params, "scan", t, fade));
     }
     return sounds;
 });

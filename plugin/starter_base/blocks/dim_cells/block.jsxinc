@@ -19,5 +19,5 @@ Engine.register("dim_cells", function (params, at) {
             Engine.keys(pair[n].opacity, [at, at + fade], [100, 100 - amount]);
         }
     }
-    return layers.concat(Engine.sound(params, "move", at));
+    return layers.concat(Engine.sound(params, "move", at, fade));
 });

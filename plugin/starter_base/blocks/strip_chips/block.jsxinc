@@ -17,5 +17,5 @@ Engine.register("strip_chips", function (params, at) {
         Engine.float(text);
         layers.push(chip, text);
     }
-    return layers.concat(Engine.sound(params, "group", at));
+    return layers.concat(Engine.sound(params, "group", at, (params.texts.length - 1) * motion.stagger * 0.6 + 0.2));
 });
