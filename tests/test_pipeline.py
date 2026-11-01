@@ -333,6 +333,30 @@ class Moments(Case):
         self.assertEqual(moments(scene, words, 0.1, [0], 100, 10, from_time=4), [5])
 
 
+class OptionalPreflight(Case):
+    def built(self):
+        f = self.to_preflight()
+        f.state["stages"]["preflight"]["status"] = "pending"
+        f.save()
+        return f
+
+    def test_asks_once_before_stage(self):
+        f = self.built()
+        self.assertEqual(f.next_action()["action"], "ask_author_run")
+        f.start("preflight")
+        self.assertEqual(f.next_action()["action"], "resume")
+
+    def test_skip_goes_to_polish(self):
+        f = self.built()
+        f.skip("preflight")
+        self.assertTrue(f.state["stages"]["preflight"]["skipped"])
+        self.assertEqual(f.next_action()["stage"], "polish")
+
+    def test_only_optional_stage(self):
+        with self.assertRaises(PipelineError):
+            self.built().skip("polish")
+
+
 class Rounds(Case):
     major = {"rule": "color.contrast", "time": 1.0, "severity": "major"}
     other = {"rule": "layout.safe", "time": 2.0, "severity": "major"}

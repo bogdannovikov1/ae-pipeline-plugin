@@ -58,7 +58,7 @@ frames/round_N/         кадры, листы и index.json
 
 ## state.json
 
-`version` (2), `fragment`, `audio`, `parts`, `rounds`, `stages`. Запись в `parts`: `audio`, `keep` (что расширение не должно изменить), `append` (была ли ручная доводка). Запись этапа: `status`, `note`, `inputs`, `outputs` (хэши файлов), `settings` (хэш настроек), `finished_at`.
+`version` (2), `fragment`, `audio`, `parts`, `rounds`, `stages`. Запись в `parts`: `audio`, `keep` (что расширение не должно изменить), `append` (была ли ручная доводка). Запись этапа: `status`, `note`, `inputs`, `outputs` (хэши файлов), `settings` (хэш настроек), `finished_at`, у пропущенного этапа `skipped: true`.
 
 Статусы: `pending`, `running`, `review`, `approved`, `rejected`, `stale`. Файл меняет только `pipeline.py`.
 

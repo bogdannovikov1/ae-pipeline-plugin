@@ -24,7 +24,7 @@
 | `transcript` | `transcriber` | `<f>.timeline.json`, `<f>.notes.md`, `<f>.aep` | агент спрашивает и открывает AE с маркерами, автор правит, затем заморозка |
 | `plan` | `make`, позже `director` | `<f>.animation.json` | автор в чате |
 | `build` | `animator` | `<f>.scene.json`, композиция | сразу к предревью |
-| `preflight` | `reviewer` и `animator` | `reviews/round_N.json` | до `review.max_rounds` кругов без автора |
+| `preflight` | `reviewer` и `animator` | `reviews/round_N.json` | автор решает, проводить ли; до `review.max_rounds` кругов без него |
 | `polish` | автор и `animator` | `<f>.aep` | автор |
 | `curate` | `librarian` | `<f>.base_proposals.md` | автор выбирает, раз в `base_update.every_fragments` фрагментов |
 

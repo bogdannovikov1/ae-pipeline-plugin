@@ -257,6 +257,20 @@ class Fragment:
         self.state["stages"][stage_id]["status"] = "running"
         self.save()
 
+    def skip(self, stage_id):
+        """Автор решил не проводить необязательный этап."""
+        self.refresh()
+        stage = self.stage(stage_id)
+        if not stage.get("optional"):
+            raise PipelineError(f"Этап {stage_id} нельзя пропустить")
+        waiting = self.blocked_by(stage)
+        if waiting:
+            raise PipelineError(f"Этап {stage_id} ждёт подтверждения: {', '.join(waiting)}")
+        if self.status(stage_id) not in ("pending", "stale"):
+            raise PipelineError(f"Этап {stage_id} уже идёт: {self.status(stage_id)}")
+        self.state["stages"][stage_id]["skipped"] = True
+        self.seal(stage, "approved")
+
     def done(self, stage_id):
         stage = self.stage(stage_id)
         if self.status(stage_id) != "running":
@@ -373,6 +387,8 @@ class Fragment:
                 action["action"] = "ask_author_rebuild"
             elif status == "running":
                 action["action"] = "resume"
+            elif stage.get("optional") and status in ("pending", "stale"):
+                action["action"] = "ask_author_run"
             else:
                 action["action"] = "start"
             if self.extension():
@@ -419,10 +435,10 @@ def finding_key(finding):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("command", choices=["init", "status", "next", "start", "done", "approve", "reject", "round", "extend"])
+    parser.add_argument("command", choices=["init", "status", "next", "start", "done", "approve", "reject", "round", "extend", "skip"])
     parser.add_argument("video", type=Path, help="папка видео")
     parser.add_argument("fragment", help="имя фрагмента")
-    parser.add_argument("stage", nargs="?", help="этап для start, done, approve, reject")
+    parser.add_argument("stage", nargs="?", help="этап для start, done, approve, reject, skip")
     parser.add_argument("--audio", help="для init и extend: имя файла записи в папке фрагмента")
     parser.add_argument("--note", help="для reject: что исправить")
     parser.add_argument("--force", action="store_true", help="для start: пересобрать этап с ручными правками")
@@ -451,6 +467,8 @@ def main():
                 parser.error("укажите этап")
             if args.command == "start":
                 fragment.start(args.stage, args.force)
+            elif args.command == "skip":
+                fragment.skip(args.stage)
             elif args.command == "done":
                 fragment.done(args.stage)
             elif args.command == "approve":

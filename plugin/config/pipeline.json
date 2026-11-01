@@ -58,7 +58,8 @@
         "{f}.scene.json"
       ],
       "outputs": [],
-      "review": "rounds"
+      "review": "rounds",
+      "optional": true
     },
     {
       "id": "polish",
