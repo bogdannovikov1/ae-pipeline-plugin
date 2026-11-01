@@ -206,6 +206,13 @@ class BaseUpdate(Case):
     def test_due_on_every_fragment(self):
         self.assertEqual(self.finish_polish().next_action()["stage"], "curate")
 
+    def test_asks_and_skip_runs_nothing(self):
+        f = self.finish_polish()
+        self.assertEqual(f.next_action()["action"], "ask_author_run")
+        f.skip("curate")
+        self.assertEqual(f.next_action()["action"], "finished")
+        self.assertFalse((self.dir / "F1.base_proposals.md").exists())
+
     def test_due_on_every_second_fragment(self):
         self.settings["base_update"]["every_fragments"] = 2
         self.assertEqual(self.finish_polish().next_action()["action"], "finished")

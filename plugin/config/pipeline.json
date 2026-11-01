@@ -93,7 +93,8 @@
       ],
       "track_outputs": false,
       "periodic": true,
-      "review": "author"
+      "review": "author",
+      "optional": true
     }
   ]
 }

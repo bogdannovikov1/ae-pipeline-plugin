@@ -1,7 +1,7 @@
 {
   "name": "ae-video",
   "displayName": "AE Video",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Ведёт видео по этапам от записи голоса до сцены в After Effects, с ревью автора на каждом этапе",
   "author": {
     "name": "Bogdan"
