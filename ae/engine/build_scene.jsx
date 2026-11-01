@@ -29,6 +29,7 @@
         Engine.base = scene.base;
         Engine.sceneFolder = new File(scenePath).parent.fsName;
         Engine.tokens = Timeline.readJson(new File(scene.base + "/tokens.json"));
+        Engine.tokens = Engine.overlay(Engine.tokens, scene.tokens || {});
         Engine.assets = Timeline.readJson(new File(scene.base + "/assets/assets.json"));
         Engine.timeline = Timeline.readJson(new File(scene.timeline));
         Engine.store = {};

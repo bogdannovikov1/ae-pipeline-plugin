@@ -79,6 +79,25 @@ $.global.Engine = (function () {
         E.smooth(prop);
     };
 
+    // One continuous spring: a fast launch, a single small overshoot and a soft settle.
+    // Damping is derived from the travel, so the overshoot stays the same size for any distance.
+    E.spring = function (layer, arrive, from, to) {
+        var token = E.tokens.motion.spring;
+        var dx = from[0] - to[0];
+        var dy = from[1] - to[1];
+        var distance = Math.sqrt(dx * dx + dy * dy);
+        var w = token.frequency;
+        var k = -Math.log(token.overshoot / distance) * w / Math.PI;
+        var start = arrive - Math.PI / (2 * w);
+        var drift = "Math.sin(time * " + E.tokens.motion.float_speed + ") * " + E.tokens.motion.float_shift;
+        layer.threeDLayer = true;
+        layer.position.setValue([to[0], to[1], 0]);
+        layer.position.expression = "var t = Math.max(time - " + start + ", 0);\n" +
+            "var s = Math.exp(-" + k + " * t) * Math.cos(" + w + " * t);\n" +
+            "[" + to[0] + " + " + dx + " * s, " + to[1] + " + " + dy + " * s + " + drift + ", 0];";
+        return start;
+    };
+
     E.fadeIn = function (layer, t, duration) {
         layer.opacity.setValueAtTime(t, 0);
         layer.opacity.setValueAtTime(t + duration, 100);
