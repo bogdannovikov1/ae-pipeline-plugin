@@ -17,7 +17,7 @@
 
 ## Пайплайн
 
-Вход: `/ae-video:make`. Навык `make` оркестрирует, `pipeline.py` хранит состояние и не пускает дальше, агенты и скрипты работают.
+Вход: `/ae-video:make` ведёт всё видео. Отдельные команды запускают один этап и соблюдают те же ворота: `/ae-video:transcript`, `:plan`, `:animate`, `:review`, `:base`. Навык `make` оркестрирует, `pipeline.py` хранит состояние и не пускает дальше, агенты и скрипты работают.
 
 | Этап | Исполнитель | Результат | Ревью |
 |---|---|---|---|
@@ -44,7 +44,7 @@ plugin/                           то, что устанавливается
   config/defaults.json            все настройки по умолчанию
   config/pipeline.json            этапы и их зависимости
   skills/make/                    оркестратор
-  skills/review/                  разовое ревью по просьбе автора
+  skills/transcript, plan, animate, review, base/  отдельные команды автора
   skills/montage-fundamentals/    законы монтажа, цвета, типографики, движения
   skills/base-structure/          устройство базы для агентов
   skills/after-effects/           справочник по AE, из aedev-tools/adobe-agent-skills, Apache-2.0
@@ -64,7 +64,7 @@ plugin/                           то, что устанавливается
 
 - Новое число или путь идёт в `defaults.json` и `docs/settings.md`. Стиль видео идёт в `tokens.json` базы, а не в настройки.
 - Поле `i` в `words` — контракт между этапами: его нельзя менять без пересчёта ссылок. При изменении формата увеличивай версию и правь `docs/formats.md`.
-- Изменение этапов вносится вместе в `pipeline.json`, навык `make`, `CLAUDE.md` и `PLAN.md`.
+- Изменение этапов вносится вместе в `pipeline.json`, навык `make`, отдельные команды, `CLAUDE.md` и `PLAN.md`.
 - Инструкции плагина ссылаются на файлы через `${CLAUDE_PLUGIN_ROOT}`. Личных путей в них нет.
 - After Effects запускается только с согласия автора: `ae_run.py` без `--launch` его не стартует.
 - ExtendScript это ES3: без `JSON`, `let`, стрелочных функций. JSX запускаем через `ae_run.py`.

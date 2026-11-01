@@ -6,6 +6,7 @@
     python3 view.py text F1.timeline.json --review
     python3 view.py scene F1.scene.json
     python3 view.py timing F1.scene.json
+    python3 view.py hash F1.timeline.json
 """
 import argparse
 from pathlib import Path
@@ -116,7 +117,7 @@ def timing_warnings(scene, data, tokens, timing):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("command", choices=["text", "scene", "timing"])
+    parser.add_argument("command", choices=["text", "scene", "timing", "hash"])
     parser.add_argument("path", type=Path)
     parser.add_argument("--from-word", type=int, default=0)
     parser.add_argument("--to-word", type=int)
@@ -125,7 +126,9 @@ def main():
 
     settings = load_settings()
     timing = settings["timing"]
-    if args.command == "text":
+    if args.command == "hash":
+        lines = [read_json(args.path).get("transcript_hash", "транскрипт не заморожен")]
+    elif args.command == "text":
         data = read_json(args.path)
         lines = review_lines(data) if args.review else text_lines(data, timing, args.from_word, args.to_word)
     else:
