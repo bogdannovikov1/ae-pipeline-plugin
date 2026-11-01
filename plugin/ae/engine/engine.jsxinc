@@ -268,14 +268,28 @@ $.global.Engine = (function () {
         return layer.source.duration;
     }
 
+    // An appearance picks its sound by how long it takes: a quick pop would not fit a slow one.
+    function eventSound(name, span) {
+        var tiers = E.tokens.sounds.appear;
+        if (tiers && (name === "pop" || name === "group")) {
+            for (var i = 0; i < tiers.length; i++) {
+                if (tiers[i].max === undefined || span <= tiers[i].max) {
+                    return tiers[i].sound;
+                }
+            }
+        }
+        return E.tokens.sounds[name];
+    }
+
     // A sound lands on the last moment of the animation: it ends with it, or a hair later.
     // length is how long the animation runs from t. A block may name its sound; false in params turns it off.
     E.sound = function (params, name, t, length) {
-        var id = params.sound === undefined ? E.tokens.sounds[name] : params.sound;
+        var span = length === undefined ? E.tokens.motion.pop_duration : length;
+        var id = params.sound === undefined ? eventSound(name, span) : params.sound;
         if (!id) {
             return [];
         }
-        var animationEnd = t + (length === undefined ? E.tokens.motion.pop_duration : length);
+        var animationEnd = t + span;
         var layer = E.comp.layers.add(E.asset(id));
         var audible = audibleLength(id, layer);
         var start = Math.max(0, animationEnd + (E.tokens.sounds.tail || 0) - audible);
