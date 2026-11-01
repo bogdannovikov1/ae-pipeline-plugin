@@ -10,7 +10,7 @@ import subprocess
 
 from settings import bases_dir, load_settings
 
-SILENCE = "silencedetect=noise=-40dB:d=0.03"
+SILENCE_BELOW_PEAK_DB = 30  # порог считается от пика: тихий звук не должен казаться короче
 
 
 def trailing_start(log, duration):
@@ -22,15 +22,18 @@ def trailing_start(log, duration):
     return duration
 
 
+def ffmpeg_log(path, audio_filter):
+    command = ["ffmpeg", "-hide_banner", "-i", str(path), "-af", audio_filter, "-f", "null", "-"]
+    return subprocess.run(command, capture_output=True, text=True).stderr
+
+
 def measure(path):
     duration = float(subprocess.run(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
         capture_output=True, text=True, check=True,
     ).stdout)
-    log = subprocess.run(
-        ["ffmpeg", "-hide_banner", "-i", str(path), "-af", SILENCE, "-f", "null", "-"],
-        capture_output=True, text=True,
-    ).stderr
+    peak = float(re.search(r"max_volume: ([-\d.]+) dB", ffmpeg_log(path, "volumedetect")).group(1))
+    log = ffmpeg_log(path, f"silencedetect=noise={peak - SILENCE_BELOW_PEAK_DB}dB:d=0.03")
     return round(trailing_start(log, duration), 3)
 
 
