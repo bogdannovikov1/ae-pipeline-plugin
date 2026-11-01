@@ -47,5 +47,11 @@
   },
   "extend": {
     "gap_seconds": 0.4
+  },
+  "timing": {
+    "max_early": 0.4,
+    "long_phrase_words": 7,
+    "long_phrase_seconds": 2.5,
+    "long_phrase_zone": 0.5
   }
 }

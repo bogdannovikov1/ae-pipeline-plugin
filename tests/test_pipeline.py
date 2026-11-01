@@ -13,6 +13,7 @@ from capture import moments
 from extend_timeline import merge as merge_part
 from pipeline import Fragment, PipelineError
 from settings import load_settings, merge
+from view import review_lines, scene_lines, text_lines, timing_warnings
 from validate import check_animation, check_scene, check_timeline
 
 
@@ -395,6 +396,54 @@ class BaseIndex(Case):
         (base / "assets" / "assets.json").write_text(json.dumps([{"id": "pop", "type": "audio", "description": "Щелчок"}]))
         self.assertEqual(list(block_lines(base)), ["label (text, x): Подпись"])
         self.assertEqual(list(asset_lines(base)), ["pop [audio]: Щелчок"])
+
+
+class View(Case):
+    timing = {"max_early": 0.4, "long_phrase_words": 7, "long_phrase_seconds": 2.5, "long_phrase_zone": 0.5}
+    tokens = {"motion": {"lead": 0.1}}
+
+    def data(self):
+        words = [{"i": n, "word": f"w{n}", "start": n * 0.3, "end": n * 0.3 + 0.2, "needs_review": n == 2} for n in range(11)]
+        return {"words": words, "phrases": [
+            {"first_word": 0, "last_word": 1},
+            {"first_word": 2, "last_word": 10},
+        ]}
+
+    def warnings(self, **item):
+        return timing_warnings({"items": [item]}, self.data(), self.tokens, self.timing)
+
+    def test_long_phrase_shows_anchor_zone(self):
+        lines = list(text_lines(self.data(), self.timing))
+        self.assertNotIn("опора", lines[0])
+        self.assertIn("опора: 6-10", lines[1])
+
+    def test_range_and_review(self):
+        self.assertEqual(len(list(text_lines(self.data(), self.timing, 0, 1))), 1)
+        self.assertIn("«w2»", list(review_lines(self.data()))[0])
+
+    def test_good_anchor_passes(self):
+        self.assertEqual(self.warnings(id="a", at_word=8), [])
+
+    def test_start_of_long_phrase_warns(self):
+        self.assertIn("в её начале", self.warnings(id="a", at_word=3)[0])
+        self.assertEqual(self.warnings(id="a", at_word=3, anchor_reason="заголовок"), [])
+
+    def test_steps_through_phrase_and_stagger_pass(self):
+        items = [{"id": "a", "at_word": 3}, {"id": "b", "at_word": 3, "delay": 0.2}, {"id": "c", "at_word": 8}]
+        self.assertEqual(timing_warnings({"items": items}, self.data(), self.tokens, self.timing), [])
+
+    def test_short_phrase_has_no_zone(self):
+        self.assertEqual(self.warnings(id="a", at_word=0), [])
+
+    def test_late_and_too_early(self):
+        self.assertIn("опаздывает", self.warnings(id="a", at_word=8, delay=0.3)[0])
+        self.assertIn("раньше", self.warnings(id="a", at_word=8, delay=-0.5)[0])
+
+    def test_scene_lines_put_items_under_phrase(self):
+        scene = {"items": [{"block": "bg", "always": True}, {"id": "a", "block": "label", "at_word": 8}]}
+        lines = list(scene_lines(scene, self.data(), self.timing))
+        self.assertIn("всегда", lines[0])
+        self.assertIn("слово 8", lines[-1])
 
 
 class Moments(Case):

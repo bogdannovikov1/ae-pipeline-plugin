@@ -42,3 +42,6 @@ python3 plugin/scripts/settings.py show --video <папка видео>
 | `base_update.every_fragments` | Этап `curate` на каждом N-м фрагменте; 0 отключает |
 | `base_update.min_repeats` | Со скольких повторов факт попадает в предложения |
 | `extend.gap_seconds` | Пауза между частями расширенного фрагмента, с |
+| `timing.max_early` | Насколько раньше слова может стартовать анимация, с |
+| `timing.long_phrase_words`, `timing.long_phrase_seconds` | С какой длины фраза считается длинной |
+| `timing.long_phrase_zone` | Доля фразы, после которой начинается зона опоры: 0,5 значит вторая половина |
