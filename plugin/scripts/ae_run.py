@@ -150,6 +150,7 @@ def main():
             run_jsx(BUILD_SCRIPT, values, settings)
             stamp = {"scene_hash": file_hash(args.path), "built_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
             build_stamp_path(args.path).write_text(json.dumps(stamp, indent=2), encoding="utf-8")
+            export_layout(args.path.resolve(), settings)
         elif args.command == "layout":
             export_layout(args.path.resolve(), settings)
         elif args.command == "review":

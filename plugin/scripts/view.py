@@ -8,6 +8,7 @@
     python3 view.py timing F1.scene.json
     python3 view.py sounds F1.scene.json
     python3 view.py layout F1.scene.json
+    python3 view.py check F1.scene.json
     python3 view.py hash F1.timeline.json
 """
 import argparse
@@ -174,9 +175,25 @@ def layout_warnings(layout, cfg):
     return warnings
 
 
+def scene_warnings(scene_path, settings):
+    """Все проверки собранной сцены одним списком: тайминг, звуки, раскладка."""
+    scene_path = Path(scene_path).resolve()
+    scene = read_json(scene_path)
+    data = read_json(resolve_path(scene["timeline"], scene_path.parent))
+    tokens = read_json(resolve_base(scene["base"], settings) / "tokens.json")
+    warnings = timing_warnings(scene, data, tokens, settings["timing"])
+    log = sound_log_path(scene_path)
+    if log.is_file():
+        warnings += sound_warnings(read_json(log)["sounds"], settings["timing"])
+    layout = layout_path(scene_path)
+    if layout.is_file():
+        warnings += layout_warnings(read_json(layout), settings["layout"])
+    return warnings
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("command", choices=["text", "scene", "timing", "sounds", "layout", "hash"])
+    parser.add_argument("command", choices=["text", "scene", "timing", "sounds", "layout", "check", "hash"])
     parser.add_argument("path", type=Path)
     parser.add_argument("--from-word", type=int, default=0)
     parser.add_argument("--to-word", type=int)
@@ -190,6 +207,8 @@ def main():
     elif args.command == "text":
         data = read_json(args.path)
         lines = review_lines(data) if args.review else text_lines(data, timing, args.from_word, args.to_word)
+    elif args.command == "check":
+        lines = scene_warnings(args.path, settings) or ["Проверки пройдены"]
     elif args.command == "layout":
         path = args.path.resolve()
         data = read_json(layout_path(path))

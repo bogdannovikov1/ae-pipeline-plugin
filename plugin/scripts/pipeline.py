@@ -18,6 +18,7 @@ from pipeline_extend import ExtensionMixin
 from pipeline_rounds import RoundsMixin
 from settings import PLUGIN_ROOT, load_settings
 from validate import check_built, file_hash, run_check
+from view import scene_warnings
 
 STATE_FILE = "state.json"
 AUDIO_TYPES = (".wav", ".mp3", ".m4a", ".aif", ".aiff")
@@ -322,6 +323,9 @@ def main():
                     parser.error("укажите --note")
                 fragment.reject(args.stage, args.note)
             result = fragment.next_action()
+            if args.command == "done" and fragment.stage(args.stage).get("needs_build"):
+                scene = fragment.folder / fragment.names(fragment.stage(args.stage)["outputs"])[0]
+                result["warnings"] = scene_warnings(scene, fragment.settings)
     except PipelineError as error:
         sys.exit(f"Отказ: {error}")
     print(json.dumps(result, ensure_ascii=False, indent=2))

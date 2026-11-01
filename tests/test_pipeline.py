@@ -12,9 +12,9 @@ from base_scan import scan
 from capture import moments
 from extend_timeline import merge as merge_part
 from pipeline import Fragment, PipelineError
-from settings import find_video, load_settings, merge
+from settings import find_video, load_settings, merge, settings_for
 from sound_measure import trailing_start
-from view import layout_warnings, sound_log_path, sound_warnings, review_lines, scene_lines, text_lines, timing_warnings
+from view import layout_warnings, scene_warnings, sound_log_path, sound_warnings, review_lines, scene_lines, text_lines, timing_warnings
 from setup_base import STARTER, create_base
 from validate import ENGINE_VERSION, check_built, file_hash
 from validate import check_animation, check_scene, check_timeline
@@ -115,9 +115,28 @@ class Built(Case):
         self.assertEqual(f.status("build"), "approved")
 
 
+class Check(Case):
+    def test_done_reports_warnings_of_all_checks(self):
+        self.write("F1.timeline.json", timeline())
+        tokens = {"motion": {"lead": 0.1}}
+        (self.bases / "b" / "tokens.json").write_text(json.dumps(tokens))
+        path = self.write_scene(self.scene(items=[{"id": "a", "block": "label", "at_word": 1, "delay": 0.5}]))
+        self.write("F1.sounds.json", {"sounds": [
+            {"item": "a", "sound": "pop", "start": 1, "end": 1.1, "animation_start": 1, "animation_end": 2}]})
+        self.write("F1.layout.json", {"width": 1920, "height": 1080, "boxes": [
+            {"item": "a", "layer": "a", "text": True, "time": 1, "until": 2, "opacity": 100,
+             "left": 0, "top": 200, "right": 300, "bottom": 300}]})
+        warnings = scene_warnings(path, self.settings)
+        self.assertEqual(len(warnings), 3)
+
+
 class Settings(Case):
     def test_merge_keeps_neighbours(self):
         self.assertEqual(merge({"a": {"x": 1, "y": 2}}, {"a": {"y": 3}}), {"a": {"x": 1, "y": 3}})
+
+    def test_settings_of_file_use_video_layer(self):
+        (self.video / "settings.json").write_text('{"transcribe": {"language": "en"}}')
+        self.assertEqual(settings_for(self.dir / "F1.wav")["transcribe"]["language"], "en")
 
     def test_video_found_from_file(self):
         self.assertEqual(find_video(self.dir / "F1.wav"), self.video.resolve())
