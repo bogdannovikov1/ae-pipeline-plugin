@@ -1,0 +1,18 @@
+// strip_value
+Engine.register("strip_value", function (params, at) {
+    var strip = Engine.store[params.target];
+    var x = strip.start_x + params.index * strip.step + (params.offset || 0);
+    var text = String(params.text);
+    var layer = Engine.text("strip value " + text, text, {
+        font: Engine.font("code_strong"), size: strip.size * (text.length > 3 ? 0.31 : 0.42),
+        color: Engine.color("on_cell"), position: [x, strip.y]
+    });
+    // The strip is off-screen at time zero, so the position is set after parenting.
+    layer.threeDLayer = true;
+    layer.parent = strip.holder;
+    layer.position.setValue([x, strip.y, -2]);
+    var pace = params.duration || 0.3;
+    Engine.keys(layer.scale, [at, at + pace * 0.6, at + pace], [[0, 0, 100], [116, 116, 100], [100, 100, 100]]);
+    Engine.fadeIn(layer, at, pace * 0.4);
+    return [layer].concat(Engine.sound(params, "pop", at));
+});

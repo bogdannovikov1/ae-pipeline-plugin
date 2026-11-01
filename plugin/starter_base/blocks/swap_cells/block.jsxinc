@@ -1,0 +1,34 @@
+// swap_cells
+Engine.register("swap_cells", function (params, at) {
+    var row = Engine.store[params.target];
+    var duration = Engine.tokens.motion.move_duration * 2;
+    var arc = params.arc || row.cell * 1.6;
+    var first = row.cells[params.a];
+    var second = row.cells[params.b];
+    function move(layer, target, lift, depth) {
+        var from = layer.position.valueAtTime(at, false);
+        var middle = [(from[0] + target[0]) / 2, from[1] + lift, depth];
+        Engine.keys(layer.position, [at, at + duration / 2, at + duration], [from, middle, target]);
+    }
+    // Index labels step aside so a flying cell never leaves them hanging over an empty slot.
+    function hideLabels(pair) {
+        var fade = Engine.tokens.motion.label_fade;
+        for (var n = 0; n < pair.length; n++) {
+            Engine.keys(pair[n].opacity, [at - fade, at, at + duration, at + duration + fade], [100, 0, 0, 100]);
+        }
+    }
+    if (row.labels.length) {
+        hideLabels(row.labels[params.a]);
+        hideLabels(row.labels[params.b]);
+    }
+    var firstAt = first.position.valueAtTime(at, false);
+    var secondAt = second.position.valueAtTime(at, false);
+    move(first, secondAt, -arc, -row.cell);
+    move(second, firstAt, arc * 0.75, row.cell * 0.5);
+    row.cells[params.a] = second;
+    row.cells[params.b] = first;
+    var parts = row.parts[params.a];
+    row.parts[params.a] = row.parts[params.b];
+    row.parts[params.b] = parts;
+    return Engine.sound(params, "swap", at);
+});

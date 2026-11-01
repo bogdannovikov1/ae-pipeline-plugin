@@ -2,6 +2,7 @@
 """Проверяет, готов ли компьютер к работе плагина."""
 import importlib.util
 import json
+import platform
 import shutil
 import sys
 from pathlib import Path
@@ -23,12 +24,13 @@ def main():
     settings = load_settings()
     base = bases_dir(settings) / settings["base"]
     checks = [
+        ("macOS на Apple Silicon", platform.system() == "Darwin" and platform.machine() == "arm64", "плагин работает только на таком Mac"),
         ("Python 3.9+", sys.version_info >= (3, 9), "обновите Python"),
         ("ffmpeg", shutil.which("ffmpeg"), "brew install ffmpeg"),
-        ("numpy", importlib.util.find_spec("numpy"), "pip install -r requirements.txt"),
-        ("mlx_whisper", importlib.util.find_spec("mlx_whisper"), "pip install -r requirements.txt"),
+        ("numpy", importlib.util.find_spec("numpy"), "pip3 install mlx-whisper numpy"),
+        ("mlx_whisper", importlib.util.find_spec("mlx_whisper"), "pip3 install mlx-whisper numpy"),
         (settings["ae"]["app"], Path("/Applications", settings["ae"]["app"]).is_dir(), "проверьте ae.app в настройках"),
-        (f"база {base}", (base / "tokens.json").is_file(), "проверьте bases_dir и base в настройках"),
+        (f"база {base}", (base / "tokens.json").is_file(), "запустите /ae-video:setup или проверьте bases_dir и base в настройках"),
     ]
     if (base / "tokens.json").is_file():
         for font in base_fonts(json.loads((base / "tokens.json").read_text(encoding="utf-8"))):

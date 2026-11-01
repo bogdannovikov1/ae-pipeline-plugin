@@ -1,0 +1,14 @@
+// card_focus
+Engine.register("card_focus", function (params, at) {
+    var row = Engine.store[params.target];
+    var card = row.cards[params.index];
+    var ring = Engine.rect("card focus", [row.width + 10, row.height + 10], 22, [0, 0], null,
+        { color: Engine.color("accent_green"), width: 4 });
+    Engine.glow(ring, true, "accent_green");
+    ring.setParentWithJump(card);
+    Engine.lift(ring, -3);
+    Engine.fadeIn(ring, at, Engine.tokens.motion.pop_duration * 0.5);
+    var over = Engine.tokens.motion.pop_overshoot;
+    Engine.keys(card.scale, [at, at + 0.15, at + 0.4], [[100, 100, 100], [over, over, 100], [100, 100, 100]]);
+    return [ring].concat(Engine.sound(params, "highlight", at));
+});

@@ -1,6 +1,6 @@
 {
-  "name": "ae-video-local",
-  "description": "Локальный каталог для разработки плагина ae-video",
+  "name": "ae-video-marketplace",
+  "description": "Плагин ae-video для видео в After Effects",
   "owner": {
     "name": "Bogdan"
   },

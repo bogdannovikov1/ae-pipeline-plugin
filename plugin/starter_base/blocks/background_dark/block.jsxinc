@@ -1,0 +1,24 @@
+// background_dark
+Engine.register("background_dark", function (params, at) {
+    var comp = Engine.comp;
+    var center = [comp.width / 2, comp.height / 2];
+    var base = comp.layers.addSolid(Engine.color("background"), "background", comp.width, comp.height, 1, comp.duration);
+    var ramp = base.property("ADBE Effect Parade").addProperty("ADBE Ramp");
+    ramp.property("ADBE Ramp-0001").setValue(center);
+    ramp.property("ADBE Ramp-0002").setValue(Engine.color("background_center").concat([1]));
+    ramp.property("ADBE Ramp-0003").setValue([comp.width, comp.height]);
+    ramp.property("ADBE Ramp-0004").setValue(Engine.color("background").concat([1]));
+    ramp.property("ADBE Ramp-0005").setValue(2);
+    ramp.property("ADBE Ramp-0006").setValue(40);
+    var dots = comp.layers.addSolid([0, 0, 0], "background dots", comp.width, comp.height, 1, comp.duration);
+    var noise = dots.property("ADBE Effect Parade").addProperty("ADBE Fractal Noise");
+    noise.property("ADBE Fractal Noise-0004").setValue(420);
+    noise.property("ADBE Fractal Noise-0005").setValue(-170);
+    noise.property("ADBE Fractal Noise-0010").setValue(16);
+    noise.property("ADBE Fractal Noise-0023").expression = "time * " + Engine.tokens.motion.background_speed;
+    dots.blendingMode = BlendingMode.SCREEN;
+    dots.opacity.setValue(params.dots_opacity === undefined ? 30 : params.dots_opacity);
+    base.moveToEnd();
+    dots.moveBefore(base);
+    return [];
+});

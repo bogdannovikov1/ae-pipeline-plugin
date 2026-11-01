@@ -1,0 +1,24 @@
+// asset_value
+Engine.register("asset_value", function (params, at) {
+    var layers = [];
+    var sounds = [];
+    var steps = params.steps;
+    for (var i = 0; i < steps.length; i++) {
+        var t = Engine.time(steps[i]);
+        var next = steps[i + 1];
+        var layer = Engine.text("value " + i, String(steps[i].text), {
+            font: Engine.font("code_strong"), size: params.size, color: Engine.color("on_cell"), position: [params.x, params.y]
+        });
+        layer.opacity.setValueAtTime(t, 0);
+        layer.opacity.setValueAtTime(t + 0.1, 100);
+        if (next) {
+            var off = Engine.time(next);
+            layer.opacity.setValueAtTime(off, 100);
+            layer.opacity.setValueAtTime(off + 0.1, 0);
+        }
+        Engine.float(layer);
+        layers.push(layer);
+        sounds = sounds.concat(Engine.sound(params, "pop", t));
+    }
+    return layers.concat(sounds);
+});

@@ -1,0 +1,19 @@
+// strip_frame
+Engine.register("strip_frame", function (params, at) {
+    var strip = Engine.store[params.target];
+    var count = params.last - params.first + 1;
+    var margin = 20;
+    var width = count * strip.step - (strip.step - strip.size) + margin * 2;
+    var height = strip.size + strip.size * 0.09 + margin * 2;
+    var center = strip.start_x + (params.first + params.last) / 2 * strip.step;
+    var y = strip.y + strip.size * 0.045;
+    var frame = Engine.rect("array frame", [width, height], 30, [center, y], null,
+        { color: Engine.color("accent_green"), width: 5 });
+    var group = frame.property("ADBE Root Vectors Group").property(1).property("ADBE Vectors Group");
+    var trim = group.addProperty("ADBE Vector Filter - Trim");
+    // The outline draws around the whole array: one continuous piece of memory.
+    Engine.keys(trim.property("ADBE Vector Trim End"), [at, at + params.duration], [0, 100]);
+    Engine.glow(frame, true, "accent_green");
+    Engine.float(frame);
+    return [frame].concat(Engine.sound(params, "move", at));
+});

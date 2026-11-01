@@ -1,0 +1,84 @@
+// list_card
+Engine.register("list_card", function (params, at) {
+    var motion = Engine.tokens.motion;
+    var width = params.width;
+    var rowHeight = params.row_height || 44;
+    var gap = params.gap === undefined ? 8 : params.gap;
+    var padding = 20;
+    var titleHeight = params.title ? rowHeight + 16 : 0;
+    var breaks = params.breaks || [];
+    var breakGap = 18;
+    var height = padding * 2 + titleHeight + params.rows.length * (rowHeight + gap) - gap + breaks.length * breakGap;
+    var panel = Engine.rect("card " + (params.title || "list"), [width, height], 18, [params.x, params.y],
+        Engine.color(params.panel || "panel"), { color: Engine.color(params.edge || "panel_edge"), width: 2 });
+    Engine.shadow(panel);
+    Engine.glow(panel);
+    var layers = [panel];
+    var top = params.y - height / 2 + padding;
+
+    // Dividers draw from the centre after the card lands, so the structure builds in reading order.
+    function divider(y, t) {
+        var line = Engine.rect("card line", [width - padding * 2, 2], 1, [params.x, y], Engine.color(params.line || "panel_edge"));
+        line.parent = panel;
+        Engine.lift(line, -1);
+        Engine.keys(line.scale, [t, t + 0.25], [[0, 100, 100], [100, 100, 100]]);
+        layers.push(line);
+    }
+
+    var start = at + motion.pop_duration * 0.4;
+    if (params.title) {
+        var title = Engine.text("card title", params.title, {
+            font: Engine.font("title"), size: rowHeight * 0.62,
+            color: Engine.color(params.title_color ? "black" : "white"),
+            position: [params.x, top + rowHeight / 2]
+        });
+        if (params.title_color) {
+            var button = Engine.rect("card title button", [width - padding * 2, rowHeight], 8,
+                [params.x, top + rowHeight / 2], Engine.color(params.title_color));
+            button.moveAfter(title);
+            button.parent = panel;
+            Engine.lift(button, -1);
+            Engine.fadeIn(button, start, 0.2);
+            layers.push(button);
+        } else {
+            divider(top + rowHeight + 8, start + 0.1);
+        }
+        title.parent = panel;
+        Engine.lift(title, -2);
+        Engine.fadeIn(title, start, 0.2);
+        layers.push(title);
+    }
+    var y = top + titleHeight + rowHeight / 2;
+    var nextBreak = 0;
+    for (var i = 0; i < params.rows.length; i++) {
+        var t = start + 0.1 + i * motion.stagger * 0.7;
+        var label = Engine.text("card text " + i, params.rows[i], {
+            font: Engine.font("code"), size: rowHeight * 0.56,
+            color: Engine.color(params.text_color || "white"), position: [params.x, y]
+        });
+        if (params.row_color) {
+            var row = Engine.rect("card row " + i, [width - padding * 2, rowHeight], 8, [params.x, y], Engine.color(params.row_color));
+            row.moveAfter(label);
+            row.parent = panel;
+            Engine.lift(row, -1);
+            Engine.fadeIn(row, t, 0.2);
+            layers.push(row);
+        }
+        label.parent = panel;
+        Engine.lift(label, -2);
+        Engine.fadeIn(label, t, 0.2);
+        layers.push(label);
+        if (params.lines && i < params.rows.length - 1) {
+            divider(y + (rowHeight + gap) / 2, t);
+        }
+        y += rowHeight + gap;
+        if (nextBreak < breaks.length && breaks[nextBreak] === i) {
+            divider(y - gap / 2 - rowHeight / 2 + breakGap / 2 - 2, t + 0.05);
+            y += breakGap;
+            nextBreak++;
+        }
+    }
+    Engine.pop(panel, at);
+    Engine.float(panel);
+    return layers.concat(Engine.sound(params, "pop", at));
+});

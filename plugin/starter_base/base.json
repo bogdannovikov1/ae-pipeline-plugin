@@ -1,0 +1,11 @@
+{
+  "name": "starter",
+  "description": "Стартовая база: блоки и токены без ассетов",
+  "version": 1,
+  "style": "style.md",
+  "tokens": "tokens.json",
+  "blocks": "blocks",
+  "assets": "assets/assets.json",
+  "references": "references",
+  "craft": "craft.md"
+}

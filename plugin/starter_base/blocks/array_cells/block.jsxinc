@@ -1,0 +1,66 @@
+// array_cells
+Engine.register("array_cells", function (params, at, id) {
+    var cell = params.cell || 130;
+    var gap = params.gap === undefined ? 14 : params.gap;
+    var count = params.values.length;
+    var step = cell + gap;
+    var firstX = params.x - step * (count - 1) / 2;
+    var layers = [];
+    var cells = [];
+    var labels = [];
+    var parts = [];
+    var motion = Engine.tokens.motion;
+    for (var i = 0; i < count; i++) {
+        var x = firstX + i * step;
+        var t = at + i * motion.stagger;
+        // Volume comes from a darker slab under the face and a light strip on top.
+        var radius = cell * 0.14;
+        var depth = cell * 0.09;
+        var edge = Engine.rect("cell edge " + i, [cell, cell], radius, [x, params.y + depth], Engine.color("cell_edge"));
+        Engine.shadow(edge);
+        var box = Engine.rect("cell " + i, [cell, cell], radius, [x, params.y], Engine.color("cell"));
+        var shine = Engine.rect("cell shine " + i, [cell * 0.72, cell * 0.05], cell * 0.025,
+            [x, params.y - cell * 0.4], Engine.color("cell_light"));
+        edge.parent = box;
+        shine.parent = box;
+        Engine.lift(edge, 2);
+        Engine.lift(shine, -1);
+        var value = Engine.text("value " + i, String(params.values[i]), {
+            font: Engine.font("code_strong"),
+            size: params.value_size || cell * 0.42,
+            color: Engine.color("on_cell"),
+            position: [x, params.y]
+        });
+        value.parent = box;
+        Engine.lift(value, -2);
+        Engine.pop(box, t);
+        Engine.float(box);
+        Engine.fadeIn(value, t + motion.pop_duration * 0.5, motion.pop_duration * 0.4);
+        Engine.fadeIn(edge, t, motion.pop_duration * 0.3);
+        Engine.fadeIn(shine, t, motion.pop_duration * 0.3);
+        layers.push(edge, box, shine, value);
+        if (params.indices !== false) {
+            var chipY = params.y - cell * 0.76;
+            var chip = Engine.rect("index chip " + i, [cell * 0.36, cell * 0.28], cell * 0.07, [x, chipY], Engine.color("accent_red"));
+            Engine.shadow(chip);
+            var index = Engine.text("index " + i, String(i), {
+                font: Engine.font("code_strong"),
+                size: cell * 0.19,
+                color: Engine.color("white"),
+                position: [x, chipY]
+            });
+            Engine.float(chip);
+            Engine.float(index);
+            Engine.fadeIn(chip, t + motion.pop_duration * 0.4, motion.pop_duration * 0.5);
+            Engine.fadeIn(index, t + motion.pop_duration * 0.4, motion.pop_duration * 0.5);
+            layers.push(chip, index);
+            labels.push([chip, index]);
+        }
+        var ink = value.property("ADBE Effect Parade").addProperty("ADBE Fill");
+        ink.property("ADBE Fill-0002").setValue(Engine.color("on_cell").concat([1]));
+        parts.push({ face: box, edge: edge, shine: shine, ink: ink.property("ADBE Fill-0002") });
+        cells.push(box);
+    }
+    Engine.store[id] = { cells: cells, labels: labels, parts: parts, cell: cell, step: step, firstX: firstX, y: params.y };
+    return layers.concat(Engine.sound(params, "group", at));
+});

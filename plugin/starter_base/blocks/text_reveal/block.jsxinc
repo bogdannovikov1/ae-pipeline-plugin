@@ -1,0 +1,32 @@
+// text_reveal
+Engine.register("text_reveal", function (params, at) {
+    var motion = Engine.tokens.motion;
+    var size = params.size || 84;
+    // Text starts early enough to be readable when the word is spoken.
+    var start = Math.max(0, at - motion.reveal_duration * 0.6);
+    var layer = Engine.text(params.text, params.text, {
+        font: Engine.font("title"),
+        size: size,
+        color: Engine.color(params.color || "white"),
+        position: [params.x, params.y]
+    });
+    var animator = layer.property("ADBE Text Properties").property("ADBE Text Animators").addProperty("ADBE Text Animator");
+    var props = animator.property("ADBE Text Animator Properties");
+    props.addProperty("ADBE Text Opacity").setValue(0);
+    props.addProperty("ADBE Text Blur").setValue([motion.reveal_blur, motion.reveal_blur]);
+    var selector = animator.property("ADBE Text Selectors").addProperty("ADBE Text Selector");
+    Engine.keys(selector.property("ADBE Text Percent Start"), [start, start + motion.reveal_duration], [0, 100]);
+    Engine.extrude(layer);
+    Engine.shadow(layer);
+    Engine.float(layer);
+    var layers = [layer];
+    if (params.underline === true) {
+        var width = layer.sourceRectAtTime(0, false).width;
+        var bar = Engine.rect("underline", [width, 6], 3, [params.x, params.y + size * 0.72], Engine.color("accent_green"));
+        Engine.glow(bar, false, "accent_green");
+        Engine.float(bar);
+        Engine.keys(bar.scale, [start + 0.1, start + 0.1 + motion.reveal_duration], [[0, 100, 100], [100, 100, 100]]);
+        layers.push(bar);
+    }
+    return layers.concat(Engine.sound(params, "text", start));
+});

@@ -1,0 +1,12 @@
+// label
+Engine.register("label", function (params, at) {
+    var layer = Engine.text(params.text, params.text, {
+        font: Engine.font(params.font || "code_strong"), size: params.size || 44,
+        color: Engine.color(params.color || "accent_blue"), position: [params.x, params.y]
+    });
+    Engine.shadow(layer);
+    Engine.keys(layer.scale, [at, at + 0.18, at + 0.3], [[60, 60, 100], [108, 108, 100], [100, 100, 100]]);
+    Engine.fadeIn(layer, at, 0.12);
+    Engine.float(layer);
+    return [layer];
+});

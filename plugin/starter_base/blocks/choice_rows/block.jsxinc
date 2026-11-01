@@ -1,0 +1,84 @@
+// choice_rows
+Engine.register("choice_rows", function (params, at) {
+    var motion = Engine.tokens.motion;
+    var height = params.height || 84;
+    var gap = params.gap || 16;
+    var size = params.size || 40;
+    var padding = size * 1.2;
+    var spacing = size * 0.7;
+    var fade = motion.pop_duration * 0.55;
+    var layers = [];
+    var rows = [];
+    var base = 0;
+    var i;
+
+    function makeText(name, value, y) {
+        return Engine.text(name, value, { font: Engine.font("body"), size: size, color: Engine.color("white"), position: [params.x, y] });
+    }
+
+    for (i = 0; i < params.items.length; i++) {
+        var y = params.y + i * (height + gap);
+        var panel = Engine.rect("row panel " + i, [100, height], 16, [params.x, y], Engine.color("panel"),
+            { color: Engine.color("panel_edge"), width: 2 });
+        Engine.shadow(panel);
+        var active = Engine.rect("row active " + i, [100, height], 16, [params.x, y], Engine.color("accent_red"));
+        Engine.glow(active, true);
+        active.opacity.setValue(0);
+        var label = makeText("row label " + i, params.items[i].label, y);
+        var hint = makeText("row hint " + i, params.items[i].hint, y);
+        hint.opacity.setValue(0);
+        var labelWidth = label.sourceRectAtTime(0, false).width;
+        var hintWidth = hint.sourceRectAtTime(0, false).width;
+        base = Math.max(base, labelWidth + padding * 2);
+        rows.push({ y: y, panel: panel, active: active, label: label, hint: hint, labelWidth: labelWidth, hintWidth: hintWidth });
+        layers.push(panel, active, label, hint);
+    }
+
+    for (i = 0; i < rows.length; i++) {
+        var row = rows[i];
+        var t = at + i * motion.stagger * 2;
+        Engine.rectSize(row.panel).setValue([base, height]);
+        Engine.rectSize(row.active).setValue([base, height]);
+        Engine.fadeIn(row.panel, t, motion.pop_duration * 0.5);
+        Engine.fadeIn(row.label, t, motion.pop_duration * 0.5);
+        row.wide = base + row.hintWidth + spacing;
+        row.labelLeft = params.x - (row.hintWidth + spacing) / 2;
+        row.hintX = params.x + (row.labelWidth + spacing) / 2;
+        row.hint.position.setValue([row.hintX, row.y]);
+    }
+
+    function setRow(row, t, open, dimmed) {
+        var width = open ? row.wide : base;
+        var sizes = [Engine.rectSize(row.panel), Engine.rectSize(row.active)];
+        for (var n = 0; n < sizes.length; n++) {
+            sizes[n].setValueAtTime(t, sizes[n].valueAtTime(t, false));
+            sizes[n].setValueAtTime(t + fade, [width, height]);
+        }
+        row.label.position.setValueAtTime(t, row.label.position.valueAtTime(t, false));
+        row.label.position.setValueAtTime(t + fade, [open ? row.labelLeft : params.x, row.y]);
+        row.hint.opacity.setValueAtTime(t + (open ? fade * 0.4 : 0), row.hint.opacity.valueAtTime(t, false));
+        row.hint.opacity.setValueAtTime(t + fade, open ? 100 : 0);
+        row.active.opacity.setValueAtTime(t, row.active.opacity.valueAtTime(t, false));
+        row.active.opacity.setValueAtTime(t + fade, open ? 100 : 0);
+        row.label.opacity.setValueAtTime(t, row.label.opacity.valueAtTime(t, false));
+        row.label.opacity.setValueAtTime(t + fade, dimmed ? motion.dim_text : 100);
+    }
+
+    for (var s = 0; s < params.steps.length; s++) {
+        var when = Engine.time(params.steps[s]);
+        for (i = 0; i < rows.length; i++) {
+            var on = i === params.steps[s].row;
+            setRow(rows[i], when, on, !on);
+        }
+    }
+    for (i = 0; i < rows.length; i++) {
+        Engine.smooth(Engine.rectSize(rows[i].panel));
+        Engine.smooth(Engine.rectSize(rows[i].active));
+        Engine.smooth(rows[i].label.position);
+        Engine.float(rows[i].panel);
+        Engine.float(rows[i].active);
+        Engine.float(rows[i].label);
+        Engine.float(rows[i].hint);
+    }
+    return layers.concat(Engine.sound(params, "group", at));
+});

@@ -1,0 +1,12 @@
+{
+  "id": "zone_panel",
+  "description": "Цветная зона половины экрана с подписью",
+  "params": {
+    "side": "left или right",
+    "label": "подпись",
+    "color": "токен цвета",
+    "opacity": "непрозрачность",
+    "size": "размер шрифта",
+    "sound": "id звука, false выключает; по умолчанию из tokens.json"
+  }
+}

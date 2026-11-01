@@ -1,0 +1,23 @@
+// dim_cells
+Engine.register("dim_cells", function (params, at) {
+    var row = Engine.store[params.target];
+    var fade = Engine.tokens.motion.dim_fade;
+    var amount = params.amount === undefined ? Engine.tokens.motion.dim_amount : params.amount;
+    var depth = row.cell * 0.09;
+    var layers = [];
+    for (var i = 0; i < params.indices.length; i++) {
+        var index = params.indices[i];
+        var shade = Engine.rect("dim " + index, [row.cell + 6, row.cell + depth + 6], row.cell * 0.14,
+            [0, depth / 2], Engine.color("background"));
+        shade.setParentWithJump(row.cells[index]);
+        Engine.lift(shade, -4);
+        shade.opacity.setValueAtTime(at, 0);
+        shade.opacity.setValueAtTime(at + fade, amount);
+        layers.push(shade);
+        var pair = row.labels[index];
+        for (var n = 0; n < pair.length; n++) {
+            Engine.keys(pair[n].opacity, [at, at + fade], [100, 100 - amount]);
+        }
+    }
+    return layers.concat(Engine.sound(params, "move", at));
+});

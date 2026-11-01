@@ -1,0 +1,11 @@
+{
+  "id": "formula",
+  "description": "Формула собирается по словам",
+  "params": {
+    "x": "центр по X",
+    "y": "центр по Y",
+    "size": "размер шрифта",
+    "pieces": "части: text, color и at_word",
+    "sound": "id звука, false выключает; по умолчанию из tokens.json"
+  }
+}

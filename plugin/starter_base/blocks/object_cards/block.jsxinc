@@ -1,0 +1,32 @@
+// object_cards
+Engine.register("object_cards", function (params, at, id) {
+    var motion = Engine.tokens.motion;
+    var width = params.width || 230;
+    var height = params.height || 130;
+    var step = width + (params.gap === undefined ? 40 : params.gap);
+    var firstX = params.x - step * (params.items.length - 1) / 2;
+    var layers = [];
+    var cards = [];
+    for (var i = 0; i < params.items.length; i++) {
+        var x = firstX + i * step;
+        var t = at + i * motion.stagger;
+        var card = Engine.rect("card " + i, [width, height], 18, [x, params.y], Engine.color("panel"),
+            { color: Engine.color("panel_edge"), width: 2 });
+        Engine.shadow(card);
+        var label = Engine.text("card text " + i, params.items[i], {
+            font: Engine.font("code_strong"),
+            size: params.size || 40,
+            color: Engine.color("white"),
+            position: [x, params.y]
+        });
+        label.parent = card;
+        Engine.lift(label, -2);
+        Engine.pop(card, t);
+        Engine.fadeIn(label, t + motion.pop_duration * 0.5, motion.pop_duration * 0.4);
+        Engine.float(card);
+        layers.push(card, label);
+        cards.push(card);
+    }
+    Engine.store[id] = { cards: cards, width: width, height: height };
+    return layers.concat(Engine.sound(params, "group", at));
+});

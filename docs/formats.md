@@ -43,7 +43,7 @@ frames/round_N/         кадры, листы и index.json
 
 ```json
 {
-  "base": "base_algoritms",
+  "base": "starter",
   "audio": "F1.wav",
   "timeline": "F1.timeline.json",
   "transcript_hash": "...",

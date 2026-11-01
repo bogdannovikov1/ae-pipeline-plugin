@@ -1,0 +1,8 @@
+{
+  "id": "background_dark",
+  "description": "Тёмный живой фон с мерцающими точками",
+  "params": {
+    "dots_opacity": "сила точек, 0–100, по умолчанию 40",
+    "sound": "id звука, false выключает; по умолчанию из tokens.json"
+  }
+}

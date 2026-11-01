@@ -1,5 +1,5 @@
 {
-  "base": "base_algoritms",
+  "base": "starter",
   "audio": "demo.wav",
   "timeline": "demo.timeline.json",
   "tail": 0.8,

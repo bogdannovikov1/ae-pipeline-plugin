@@ -1,0 +1,17 @@
+// highlight_cell
+Engine.register("highlight_cell", function (params, at) {
+    var row = Engine.store[params.target];
+    var box = row.cells[params.index];
+    // The ring wraps the face and the lower edge exactly and stays inside the gap between cells.
+    var depth = row.cell * 0.09;
+    var offset = 8;
+    var ring = Engine.rect("highlight", [row.cell + offset, row.cell + depth + offset], row.cell * 0.14 + offset / 2,
+        [0, depth / 2], null, { color: Engine.color("accent_green"), width: 4 });
+    Engine.glow(ring, true, "accent_green");
+    ring.setParentWithJump(box);
+    Engine.lift(ring, -3);
+    Engine.fadeIn(ring, at, Engine.tokens.motion.pop_duration * 0.5);
+    var over = Engine.tokens.motion.pop_overshoot;
+    Engine.keys(box.scale, [at, at + 0.15, at + 0.4], [[100, 100, 100], [over, over, 100], [100, 100, 100]]);
+    return [ring].concat(Engine.sound(params, "highlight", at));
+});

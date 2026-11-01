@@ -1,6 +1,6 @@
 {
-  "bases_dir": "~/Documents/Projects/Videos/bases",
-  "base": "base_algoritms",
+  "bases_dir": "~/Documents/ae-video/bases",
+  "base": "starter",
   "transcribe": {
     "model": "mlx-community/whisper-large-v3-turbo",
     "language": "ru",
@@ -18,10 +18,7 @@
   "ae": {
     "app": "Adobe After Effects 2026",
     "timeout": 500,
-    "autosave_projects": [
-      "~/Documents/Projects/Videos/copy_*",
-      "~/Documents/Projects/Videos/test_*"
-    ],
+    "autosave_projects": [],
     "launch_timeout": 240,
     "review_width": 1920,
     "review_height": 1080,

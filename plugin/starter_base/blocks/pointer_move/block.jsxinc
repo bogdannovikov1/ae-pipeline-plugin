@@ -1,0 +1,32 @@
+// pointer_move
+Engine.register("pointer_move", function (params, at) {
+    var row = Engine.store[params.target];
+    var motion = Engine.tokens.motion;
+    var size = row.cell * 0.28;
+    var y = row.y + row.cell * 0.98;
+    var layer = Engine.vectorLayer("pointer");
+    var group = Engine.path(layer, "triangle", [[-size, size], [size, size], [0, -size * 0.8]],
+        [[0, 0], [0, 0], [0, 0]], [[0, 0], [0, 0], [0, 0]], true);
+    group.property("ADBE Vectors Group").addProperty("ADBE Vector Graphic - Fill")
+        .property("ADBE Vector Fill Color").setValue(Engine.color("white"));
+    Engine.shadow(layer);
+    Engine.glow(layer);
+    var first = params.steps[0];
+    var start = Engine.time(first);
+    layer.position.setValue([row.firstX + first.index * row.step, y]);
+    Engine.pop(layer, start);
+    for (var i = 1; i < params.steps.length; i++) {
+        var step = params.steps[i];
+        var t = Engine.time(step);
+        var from = row.firstX + params.steps[i - 1].index * row.step;
+        layer.position.setValueAtTime(t, [from, y, 0]);
+        layer.position.setValueAtTime(t + motion.move_duration, [row.firstX + step.index * row.step, y, 0]);
+    }
+    Engine.smooth(layer.position);
+    Engine.float(layer);
+    var sounds = Engine.sound(params, "pop", start);
+    for (var s = 1; s < params.steps.length; s++) {
+        sounds = sounds.concat(Engine.sound(params, "move", Engine.time(params.steps[s])));
+    }
+    return [layer].concat(sounds);
+});

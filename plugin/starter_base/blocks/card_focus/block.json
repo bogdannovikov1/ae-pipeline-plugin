@@ -1,0 +1,9 @@
+{
+  "id": "card_focus",
+  "description": "Подсветка карточки из object_cards",
+  "params": {
+    "target": "id ряда",
+    "index": "номер карточки",
+    "sound": "id звука, false выключает; по умолчанию из tokens.json"
+  }
+}

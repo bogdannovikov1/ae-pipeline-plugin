@@ -1,0 +1,9 @@
+{
+  "id": "strip_cursor",
+  "description": "Рамка-курсор переезжает по ячейкам ленты в такт словам",
+  "params": {
+    "target": "id ленты",
+    "steps": "шаги: index и at_word",
+    "sound": "id звука, false выключает; по умолчанию из tokens.json"
+  }
+}

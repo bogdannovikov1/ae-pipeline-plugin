@@ -1,0 +1,30 @@
+// strip_cursor
+Engine.register("strip_cursor", function (params, at) {
+    var strip = Engine.store[params.target];
+    var size = strip.size + 12;
+    var depth = strip.size * 0.09;
+    var cursor = Engine.rect("array cursor", [size, size + depth], size * 0.14, [0, 0], null,
+        { color: Engine.color("white"), width: 6 });
+    cursor.threeDLayer = true;
+    cursor.parent = strip.holder;
+    var y = strip.y + depth / 2;
+    var move = 0.28;
+    var sounds = [];
+    for (var i = 0; i < params.steps.length; i++) {
+        var step = params.steps[i];
+        var t = Engine.time(step);
+        var x = strip.start_x + step.index * strip.step;
+        if (i === 0) {
+            cursor.position.setValue([x, y, -3]);
+        } else {
+            var from = strip.start_x + params.steps[i - 1].index * strip.step;
+            cursor.position.setValueAtTime(t - move, [from, y, -3]);
+            cursor.position.setValueAtTime(t, [x, y, -3]);
+        }
+        sounds = sounds.concat(Engine.sound(params, "pop", t));
+    }
+    Engine.smooth(cursor.position);
+    Engine.glow(cursor, true);
+    Engine.fadeIn(cursor, at, 0.2);
+    return [cursor].concat(sounds);
+});

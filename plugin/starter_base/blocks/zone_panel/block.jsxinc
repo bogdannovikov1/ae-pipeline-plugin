@@ -1,0 +1,22 @@
+// zone_panel
+Engine.register("zone_panel", function (params, at) {
+    var comp = Engine.comp;
+    var width = comp.width / 2;
+    var left = params.side === "left";
+    var panel = Engine.rect("panel " + params.label, [width, comp.height], 0,
+        [left ? width / 2 : width * 1.5, comp.height / 2], Engine.color(params.color));
+    panel.opacity.setValueAtTime(at, 0);
+    panel.opacity.setValueAtTime(at + 0.3, params.opacity);
+    var label = Engine.text(params.label, params.label, {
+        font: Engine.font("title"),
+        size: params.size || 72,
+        color: Engine.color("white"),
+        left: left,
+        position: [left ? 96 : comp.width - 250, comp.height - 96]
+    });
+    Engine.extrude(label);
+    Engine.shadow(label);
+    Engine.fadeIn(label, at, 0.3);
+    Engine.float(label);
+    return [panel, label];
+});

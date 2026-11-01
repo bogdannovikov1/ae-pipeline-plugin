@@ -1,0 +1,11 @@
+{
+  "id": "asset_value",
+  "description": "Значение на ассете меняется по словам",
+  "params": {
+    "x": "центр по X",
+    "y": "центр по Y",
+    "size": "размер шрифта",
+    "steps": "шаги: text и at_word",
+    "sound": "id звука, false выключает; по умолчанию из tokens.json"
+  }
+}

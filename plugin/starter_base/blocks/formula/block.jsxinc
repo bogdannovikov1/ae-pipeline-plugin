@@ -1,0 +1,27 @@
+// formula
+Engine.register("formula", function (params, at) {
+    var charWidth = params.size * 0.6;
+    var total = 0;
+    var i;
+    for (i = 0; i < params.pieces.length; i++) {
+        total += params.pieces[i].text.length;
+    }
+    var x = params.x - total * charWidth / 2;
+    var layers = [];
+    for (i = 0; i < params.pieces.length; i++) {
+        var piece = params.pieces[i];
+        var t = Engine.time(piece);
+        var width = piece.text.length * charWidth;
+        var layer = Engine.text("formula " + i, piece.text, {
+            font: Engine.font("code_strong"), size: params.size,
+            color: Engine.color(piece.color || "white"), position: [x + width / 2, params.y]
+        });
+        Engine.shadow(layer);
+        Engine.keys(layer.scale, [t, t + 0.18, t + 0.3], [[70, 70, 100], [106, 106, 100], [100, 100, 100]]);
+        Engine.fadeIn(layer, t, 0.12);
+        Engine.float(layer);
+        layers.push(layer);
+        x += width;
+    }
+    return layers.concat(Engine.sound(params, "pop", at));
+});

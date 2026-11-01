@@ -1,0 +1,37 @@
+// memory_strip
+Engine.register("memory_strip", function (params, at, id) {
+    var comp = Engine.comp;
+    var motion = Engine.tokens.motion;
+    var holder = comp.layers.addNull(comp.duration);
+    holder.name = "strip";
+    holder.position.setValue([0, 0]);
+    var size = params.step - params.gap;
+    var depth = size * 0.09;
+    var radius = size * 0.14;
+    var layers = [holder];
+    for (var i = 0; i < params.count; i++) {
+        var x = params.start_x + i * params.step;
+        var edge = Engine.rect("strip edge " + i, [size, size], radius, [x, params.y + depth], Engine.color("cell_edge"));
+        Engine.shadow(edge);
+        var face = Engine.rect("strip cell " + i, [size, size], radius, [x, params.y], Engine.color("cell"));
+        var shine = Engine.rect("strip shine " + i, [size * 0.72, size * 0.05], size * 0.025,
+            [x, params.y - size * 0.4], Engine.color("cell_light"));
+        edge.parent = holder;
+        face.parent = holder;
+        shine.parent = holder;
+        Engine.lift(edge, 2);
+        Engine.lift(shine, -1);
+        layers.push(edge, face, shine);
+        if (params.values[i] !== undefined && params.values[i] !== null) {
+            var text = Engine.text("strip value " + i, String(params.values[i]), {
+                font: Engine.font("code_strong"), size: size * 0.42, color: Engine.color("on_cell"), position: [x, params.y]
+            });
+            text.parent = holder;
+            Engine.lift(text, -2);
+            layers.push(text);
+        }
+    }
+    Engine.store[id] = { holder: holder, start_x: params.start_x, step: params.step, size: size, y: params.y };
+    var start = Engine.spring(holder, at, [params.slide, 0], [0, 0]);
+    return layers.concat(Engine.sound(params, "move", start), Engine.sound(params, "group", at));
+});

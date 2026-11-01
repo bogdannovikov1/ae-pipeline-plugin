@@ -1,0 +1,15 @@
+// object_pop
+Engine.register("object_pop", function (params, at) {
+    var item = Engine.asset(params.asset);
+    var layer = Engine.comp.layers.add(item);
+    layer.position.setValue([params.x, params.y]);
+    var ratio = (params.size || 240) / Math.max(item.width, item.height) * 100;
+    Engine.shadow(layer);
+    Engine.glow(layer);
+    var times = [at, at + Engine.tokens.motion.pop_duration * 0.65, at + Engine.tokens.motion.pop_duration];
+    var over = Engine.tokens.motion.pop_overshoot / 100;
+    Engine.keys(layer.scale, times, [[0, 0, 100], [ratio * over, ratio * over, 100], [ratio, ratio, 100]]);
+    Engine.fadeIn(layer, at, Engine.tokens.motion.pop_duration * 0.3);
+    Engine.float(layer);
+    return [layer].concat(Engine.sound(params, "pop", at));
+});

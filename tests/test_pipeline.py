@@ -14,6 +14,7 @@ from extend_timeline import merge as merge_part
 from pipeline import Fragment, PipelineError
 from settings import load_settings, merge
 from view import review_lines, scene_lines, text_lines, timing_warnings
+from setup_base import STARTER, create_base
 from validate import check_animation, check_scene, check_timeline
 
 
@@ -444,6 +445,23 @@ class View(Case):
         lines = list(scene_lines(scene, self.data(), self.timing))
         self.assertIn("всегда", lines[0])
         self.assertIn("слово 8", lines[-1])
+
+
+class Starter(Case):
+    def test_create_base_keeps_existing(self):
+        target = self.root / "bases" / "new"
+        self.assertTrue(create_base(target))
+        self.assertTrue((target / "tokens.json").is_file())
+        (target / "style.md").write_text("мой стиль")
+        self.assertFalse(create_base(target))
+        self.assertEqual((target / "style.md").read_text(), "мой стиль")
+
+    def test_starter_is_complete_and_has_no_sounds(self):
+        tokens = json.loads((STARTER / "tokens.json").read_text())
+        self.assertEqual({k: v for k, v in tokens["sounds"].items() if k != "level" and v}, {})
+        for block in (STARTER / "blocks").iterdir():
+            self.assertTrue((block / "block.jsxinc").is_file(), block.name)
+            self.assertTrue((block / "block.json").is_file(), block.name)
 
 
 class Moments(Case):

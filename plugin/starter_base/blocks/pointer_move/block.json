@@ -1,0 +1,9 @@
+{
+  "id": "pointer_move",
+  "description": "Голубой указатель переезжает по ячейкам",
+  "params": {
+    "target": "id блока array_cells",
+    "steps": "шаги: index и at_word",
+    "sound": "id звука, false выключает; по умолчанию из tokens.json"
+  }
+}

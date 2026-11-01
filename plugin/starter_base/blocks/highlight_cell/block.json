@@ -1,0 +1,9 @@
+{
+  "id": "highlight_cell",
+  "description": "Красное свечение на элементе массива",
+  "params": {
+    "target": "id блока array_cells",
+    "index": "номер ячейки",
+    "sound": "id звука, false выключает; по умолчанию из tokens.json"
+  }
+}

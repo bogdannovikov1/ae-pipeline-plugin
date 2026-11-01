@@ -1,0 +1,25 @@
+// stagger_in
+Engine.register("stagger_in", function (params, at) {
+    var layers = [];
+    var motion = Engine.tokens.motion;
+    var gap = params.gap || 90;
+    for (var i = 0; i < params.items.length; i++) {
+        var right = params.direction === "right";
+        var x = params.x + (right ? i * gap : 0);
+        var y = params.y + (right ? 0 : i * gap);
+        var layer = Engine.text("item " + i, params.items[i], {
+            font: Engine.font("body"),
+            size: params.size || 56,
+            color: Engine.color(params.color || "white"),
+            position: [x, y]
+        });
+        var t = at + i * motion.stagger;
+        Engine.extrude(layer);
+        Engine.shadow(layer);
+        Engine.keys(layer.position, [t, t + motion.pop_duration], [[x, y + 40], [x, y]]);
+        Engine.fadeIn(layer, t, motion.pop_duration);
+        Engine.float(layer);
+        layers.push(layer);
+    }
+    return layers.concat(Engine.sound(params, "group", at));
+});

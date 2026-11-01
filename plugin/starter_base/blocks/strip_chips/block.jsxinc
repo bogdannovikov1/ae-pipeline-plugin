@@ -1,0 +1,21 @@
+// strip_chips
+Engine.register("strip_chips", function (params, at) {
+    var strip = Engine.store[params.target];
+    var motion = Engine.tokens.motion;
+    var layers = [];
+    for (var i = 0; i < params.texts.length; i++) {
+        var x = strip.start_x + (params.first + i) * strip.step;
+        var y = strip.y + params.offset;
+        var t = at + i * motion.stagger * 0.6;
+        var chip = Engine.rect("chip " + i, [params.width, params.height], 10, [x, y], Engine.color(params.color));
+        var text = Engine.text("chip text " + i, String(params.texts[i]), {
+            font: Engine.font("code_strong"), size: params.height * 0.62, color: Engine.color("white"), position: [x, y]
+        });
+        Engine.fadeIn(chip, t, 0.2);
+        Engine.fadeIn(text, t, 0.2);
+        Engine.float(chip);
+        Engine.float(text);
+        layers.push(chip, text);
+    }
+    return layers.concat(Engine.sound(params, "group", at));
+});

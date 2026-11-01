@@ -22,8 +22,8 @@
 | Этап | Исполнитель | Результат | Ревью |
 |---|---|---|---|
 | `transcript` | `transcriber` | `<f>.timeline.json`, `<f>.notes.md`, `<f>.aep` | агент спрашивает и открывает AE с маркерами, автор правит, затем заморозка |
-| `plan` | `make`, позже `director` | `<f>.animation.json` | автор в чате |
-| `build` | `animator` | `<f>.scene.json`, композиция | сразу к предревью |
+| `plan` | навык `plan`, позже `director` | `<f>.animation.json` | автор в чате |
+| `build` | `animator` | `<f>.scene.json`, композиция | автор решает про предревью |
 | `preflight` | `reviewer` и `animator` | `reviews/round_N.json` | каждый запуск по согласию автора, до `review.max_rounds` кругов |
 | `polish` | автор и `animator` | `<f>.aep` | автор |
 | `curate` | `librarian` | `<f>.base_proposals.md` | автор выбирает, раз в `base_update.every_fragments` фрагментов |
@@ -35,8 +35,9 @@
 ## Где что лежит
 
 ```text
-CLAUDE.md, PLAN.md, README.md     правила разработки, план, установка
-.claude-plugin/marketplace.json   локальный каталог для установки плагина
+CLAUDE.md, PLAN.md, README.md     правила разработки, план, инструкция пользователя
+LICENSE                           MIT
+.claude-plugin/marketplace.json   каталог для установки плагина
 docs/                             base.md, settings.md, formats.md
 tests/                            тесты скриптов без AE и модели
 plugin/                           то, что устанавливается
@@ -44,7 +45,7 @@ plugin/                           то, что устанавливается
   config/defaults.json            все настройки по умолчанию
   config/pipeline.json            этапы и их зависимости
   skills/make/                    оркестратор
-  skills/transcript, plan, animate, review, base/  отдельные команды автора
+  skills/setup, transcript, plan, animate, review, base/  отдельные команды автора
   skills/montage-fundamentals/    законы монтажа, цвета, типографики, движения
   skills/base-structure/          устройство базы для агентов
   skills/after-effects/           справочник по AE, из aedev-tools/adobe-agent-skills, Apache-2.0
@@ -52,13 +53,14 @@ plugin/                           то, что устанавливается
   scripts/                        Python: состояние, проверки, запуск AE, съёмка, транскрипт
   ae/                             JSX: маркеры, съёмка кадров, движок сцен
   examples/demo_scene.json        демонстрация блоков
+  starter_base/                   стартовая база для новых пользователей
 ```
 
 Вне репозитория:
 
-- **База:** `~/Documents/Projects/Videos/bases/<имя>/`, свой git. Устройство: `docs/base.md`. Меняется только через `librarian`.
+- **База:** `bases_dir/<имя>/`, у автора свой git. Устройство: `docs/base.md`. Меняется только через `librarian`.
 - **Видео:** `<видео>/fragments/<фрагмент>/`, там `state.json`, файлы этапов, `reviews/`, `frames/`.
-- **Настройки:** `plugin/config/defaults.json` → `~/.config/ae-video/settings.json` → `<видео>/settings.json`. Описание: `docs/settings.md`.
+- **Настройки:** `plugin/config/defaults.json` (общие значения, без личных путей) → `~/.config/ae-video/settings.json` (личные) → `<видео>/settings.json`. Описание: `docs/settings.md`.
 
 ## Правила разработки
 
@@ -69,5 +71,7 @@ plugin/                           то, что устанавливается
 - After Effects запускается только с согласия автора: `ae_run.py` без `--launch` его не стартует.
 - ExtendScript это ES3: без `JSON`, `let`, стрелочных функций. JSX запускаем через `ae_run.py`.
 - Слои-фигуры не вращаем в 3D, родителя задаём до позиции. Подробности монтажа живут в `craft.md` базы.
+- README написан для любого пользователя: личных путей и привязок к одному автору в нём и в репозитории нет.
+- `plugin/starter_base` публичная: без ассетов неизвестной лицензии. Рабочая база автора в репозиторий не входит.
 - Перед коммитом: `python3 tests/test_pipeline.py` и `claude plugin validate ./plugin`.
 - Движение и звук может оценить только автор: говори об этом прямо.

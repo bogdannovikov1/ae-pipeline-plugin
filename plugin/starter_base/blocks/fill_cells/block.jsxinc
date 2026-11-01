@@ -1,0 +1,46 @@
+// fill_cells
+Engine.register("fill_cells", function (params, at, id, item) {
+    var row = Engine.store[params.target];
+    var motion = Engine.tokens.motion;
+    var fade = motion.fill_fade;
+    var color = Engine.color(params.color || "cell_active");
+    var edgeColor = Engine.color(params.edge_color || "cell_active_edge");
+    var inkColor = Engine.color(params.ink_color || "white");
+    var end = Engine.endTime(item);
+    var steps = params.steps;
+    if (!steps) {
+        steps = [];
+        for (var n = 0; n < params.indices.length; n++) {
+            steps.push({ index: params.indices[n], time: at + n * (params.each || motion.fill_each) });
+        }
+    }
+
+    function when(step) {
+        return step.time === undefined ? Engine.time(step) : step.time;
+    }
+
+    // The cell itself changes color, so the face, edge and digit always stay aligned.
+    function paint(prop, target, t, off) {
+        var rest = prop.valueAtTime(t, false);
+        prop.setValueAtTime(t, rest);
+        prop.setValueAtTime(t + fade, target);
+        if (off !== null) {
+            prop.setValueAtTime(off, target);
+            prop.setValueAtTime(off + fade, rest);
+        }
+    }
+
+    var sounds = [];
+    for (var i = 0; i < steps.length; i++) {
+        var t = when(steps[i]);
+        var next = steps[i + 1];
+        var off = next && !params.trail ? when(next) : end;
+        var cell = row.parts[steps[i].index];
+        paint(Engine.rectFill(cell.face), color.concat([1]), t, off);
+        paint(Engine.rectFill(cell.edge), edgeColor.concat([1]), t, off);
+        paint(cell.ink, inkColor.concat([1]), t, off);
+        paint(cell.shine.opacity, motion.fill_shine, t, off);
+        sounds = sounds.concat(Engine.sound(params, "scan", t));
+    }
+    return sounds;
+});

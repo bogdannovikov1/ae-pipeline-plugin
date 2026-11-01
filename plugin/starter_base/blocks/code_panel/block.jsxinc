@@ -1,0 +1,58 @@
+// code_panel
+Engine.register("code_panel", function (params, at) {
+    var size = params.size || 34;
+    var lineHeight = size * 1.5;
+    var width = params.width || 1100;
+    var padding = size;
+    var header = size * 1.5;
+    var height = params.lines.length * lineHeight + padding * 2 + header;
+    var left = params.x - width / 2 + padding;
+    var top = params.y - height / 2 + header + padding + lineHeight / 2;
+    var panel = Engine.rect("code panel", [width, height], 18, [params.x, params.y], Engine.color("panel"),
+        { color: Engine.color("panel_edge"), width: 2 });
+    Engine.shadow(panel);
+    Engine.glow(panel);
+    var layers = [panel];
+    var dotColors = ["accent_red", "cell", "accent_blue"];
+    for (var d = 0; d < dotColors.length; d++) {
+        var dot = Engine.rect("window dot " + d, [size * 0.4, size * 0.4], size * 0.2,
+            [params.x - width / 2 + padding + d * size * 0.7, params.y - height / 2 + header / 2], Engine.color(dotColors[d]));
+        dot.parent = panel;
+        Engine.fadeIn(dot, at + Engine.tokens.motion.pop_duration * 0.5, 0.2);
+        layers.push(dot);
+    }
+    var steps = params.steps || [];
+    if (steps.length) {
+        var band = Engine.rect("code highlight", [width - padding, lineHeight], 8,
+            [params.x, top + steps[0].line * lineHeight], Engine.color("accent_red"));
+        band.parent = panel;
+        var firstAt = Engine.time(steps[0]);
+        band.opacity.setValueAtTime(firstAt, 0);
+        band.opacity.setValueAtTime(firstAt + 0.2, 70);
+        for (var s = 1; s < steps.length; s++) {
+            var t = Engine.time(steps[s]);
+            var duration = Engine.tokens.motion.move_duration * 0.6;
+            var bandX = band.position.valueAtTime(0, true)[0];
+            band.position.setValueAtTime(t, [bandX, top + steps[s - 1].line * lineHeight - params.y, 0]);
+            band.position.setValueAtTime(t + duration, [bandX, top + steps[s].line * lineHeight - params.y, 0]);
+        }
+        Engine.smooth(band.position);
+        layers.push(band);
+    }
+    for (var i = 0; i < params.lines.length; i++) {
+        var line = Engine.text("code " + i, params.lines[i] || " ", {
+            font: Engine.font("code"),
+            size: size,
+            color: Engine.color("white"),
+            left: true,
+            position: [left, top + i * lineHeight]
+        });
+        line.parent = panel;
+        Engine.fadeIn(line, at + Engine.tokens.motion.pop_duration * 0.5, 0.2);
+        layers.push(line);
+    }
+    // Keys go last: children cannot be parented to a layer scaled to zero.
+    Engine.pop(panel, at);
+    Engine.float(panel);
+    return layers.concat(Engine.sound(params, "move", at));
+});

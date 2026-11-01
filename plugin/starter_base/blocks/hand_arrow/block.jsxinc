@@ -1,0 +1,54 @@
+// hand_arrow
+Engine.register("hand_arrow", function (params, at) {
+    var motion = Engine.tokens.motion;
+    var color = Engine.color(params.color || "white");
+    var a = params.from;
+    var b = params.to;
+    if (params.target) {
+        // The tip lands on the side of a cell, so it keeps pointing at it.
+        var row = Engine.store[params.target];
+        var center = row.cells[params.index].position.valueAtTime(at, false);
+        var side = a[0] >= center[0] ? 1 : -1;
+        b = [center[0] + side * (row.cell / 2 + 22), center[1]];
+    }
+    var bend = params.bend === undefined ? 80 : params.bend;
+    var dx = b[0] - a[0];
+    var dy = b[1] - a[1];
+    var length = Math.sqrt(dx * dx + dy * dy);
+    var nx = -dy / length * bend;
+    var ny = dx / length * bend;
+    var layer = Engine.vectorLayer("hand arrow");
+    var line = Engine.path(layer, "line", [a, b], [[0, 0], [-dx / 3 + nx, -dy / 3 + ny]], [[dx / 3 + nx, dy / 3 + ny], [0, 0]], false);
+    Engine.addStroke(line, color, 6);
+    var trim = line.property("ADBE Vectors Group").addProperty("ADBE Vector Filter - Trim");
+    Engine.keys(trim.property("ADBE Vector Trim End"), [at, at + motion.arrow_duration], [0, 100]);
+    var angle = Math.atan2(dy / 3 - ny, dx / 3 - nx);
+    var wing = 30;
+    function tip(turn) {
+        return [b[0] - wing * Math.cos(angle + turn), b[1] - wing * Math.sin(angle + turn)];
+    }
+    var head = Engine.path(layer, "head", [tip(0.42), b, tip(-0.42)], [[0, 0], [0, 0], [0, 0]], [[0, 0], [0, 0], [0, 0]], true);
+    head.property("ADBE Vectors Group").addProperty("ADBE Vector Graphic - Fill").property("ADBE Vector Fill Color").setValue(color);
+    Engine.addStroke(head, color, 4);
+    var headOpacity = head.property("ADBE Vector Transform Group").property("ADBE Vector Group Opacity");
+    headOpacity.setValueAtTime(at + motion.arrow_duration * 0.8, 0);
+    headOpacity.setValueAtTime(at + motion.arrow_duration, 100);
+    Engine.shadow(layer);
+    Engine.glow(layer);
+    Engine.float(layer);
+    var layers = [layer];
+    if (params.label) {
+        // A label sits at the middle of the curve, on its outer side, so it never touches the line.
+        var direction = bend < 0 ? -1 : 1;
+        var gap = (params.label_gap || 58) * direction;
+        var label = Engine.text(params.label, params.label, {
+            font: Engine.font("code_strong"), size: params.label_size || 46, color: color,
+            position: [(a[0] + b[0]) / 2 + nx * 0.75 - dy / length * gap, (a[1] + b[1]) / 2 + ny * 0.75 + dx / length * gap]
+        });
+        Engine.shadow(label);
+        Engine.fadeIn(label, at + motion.arrow_duration * 0.6, 0.2);
+        Engine.float(label);
+        layers.push(label);
+    }
+    return layers.concat(Engine.sound(params, "arrow", at));
+});
