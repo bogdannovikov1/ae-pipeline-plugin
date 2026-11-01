@@ -12,5 +12,7 @@
     "motion-design",
     "pipeline"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "repository": "https://github.com/bogdannovikov1/ae-pipeline-plugin",
+  "homepage": "https://github.com/bogdannovikov1/ae-pipeline-plugin"
 }

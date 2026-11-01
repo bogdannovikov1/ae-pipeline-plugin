@@ -42,7 +42,7 @@
 **1. Подключите каталог плагина:**
 
 ```bash
-claude plugin marketplace add OWNER/ae-video
+claude plugin marketplace add bogdannovikov1/ae-pipeline-plugin
 ```
 
 **2. Установите плагин:**
@@ -274,11 +274,11 @@ my_first_video/
 ## Разработка
 
 ```bash
-git clone https://github.com/OWNER/ae-video.git
+git clone https://github.com/bogdannovikov1/ae-pipeline-plugin.git
 ```
 
 ```bash
-claude --plugin-dir ./ae-video/plugin
+claude --plugin-dir ./ae-pipeline-plugin/plugin
 ```
 
 ```bash
