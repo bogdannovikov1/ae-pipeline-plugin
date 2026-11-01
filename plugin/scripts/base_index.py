@@ -28,9 +28,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("block", nargs="?", help="показать параметры одного блока")
     parser.add_argument("--base", help="имя базы, по умолчанию активная")
+    parser.add_argument("--video", help="папка видео с её настройками")
     args = parser.parse_args()
 
-    settings = load_settings()
+    settings = load_settings(args.video)
     base = resolve_base(args.base or settings["base"], settings)
     if args.block:
         path = base / "blocks" / args.block / "block.json"

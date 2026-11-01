@@ -15,17 +15,9 @@ from pathlib import Path
 
 import numpy as np
 
-from settings import load_settings
+from settings import settings_for
 
 SAMPLE_RATE = 16000
-SETTINGS = load_settings()["refine"]
-FRAME_SECONDS = SETTINGS["frame_seconds"]
-MIN_VOICED_FRAMES = SETTINGS["min_voiced_frames"]  # короткие щелчки не считаем речью
-MAX_GAP_FRAMES = SETTINGS["max_gap_frames"]  # более длинная тишина разделяет звук на отдельные куски
-MAX_BELOW_SPEECH_DB = SETTINGS["max_below_speech_db"]  # всё, что настолько тише речи, не считаем речью
-PAD_START = SETTINGS["pad_start"]  # запас, чтобы не срезать тихое начало слова
-PAD_END = SETTINGS["pad_end"]
-THRESHOLD_POSITION = SETTINGS["threshold_position"]  # порог между шумом (0) и громкой речью (1)
 
 
 def load_mono(audio_path):
@@ -38,9 +30,9 @@ def load_mono(audio_path):
     return np.frombuffer(output, dtype=np.float32)
 
 
-def analyze(samples):
+def analyze(samples, cfg):
     """Возвращает для кадров по 10 мс признак речи и громкость в дБ."""
-    frame_size = int(SAMPLE_RATE * FRAME_SECONDS)
+    frame_size = int(SAMPLE_RATE * cfg["frame_seconds"])
     count = len(samples) // frame_size
     frames = samples[:count * frame_size].reshape(count, frame_size)
     rms = np.sqrt(np.mean(frames ** 2, axis=1))
@@ -48,27 +40,27 @@ def analyze(samples):
 
     # Порог считается по самой записи и не зависит от её общей громкости.
     noise, speech = np.percentile(levels, [10, 90])
-    threshold = max(noise + THRESHOLD_POSITION * (speech - noise), speech - MAX_BELOW_SPEECH_DB)
+    threshold = max(noise + cfg["threshold_position"] * (speech - noise), speech - cfg["max_below_speech_db"])
     voiced = levels >= threshold
 
-    # Кадр остаётся речью, только если входит в серию из MIN_VOICED_FRAMES кадров.
-    window = np.ones(MIN_VOICED_FRAMES, dtype=int)
-    runs = np.convolve(voiced.astype(int), window) >= MIN_VOICED_FRAMES
-    return runs[MIN_VOICED_FRAMES - 1:] | runs[:len(voiced)], levels
+    # Кадр остаётся речью, только если входит в серию из min_voiced_frames кадров: короткие щелчки не речь.
+    size = cfg["min_voiced_frames"]
+    runs = np.convolve(voiced.astype(int), np.ones(size, dtype=int)) >= size
+    return runs[size - 1:] | runs[:len(voiced)], levels
 
 
-def loudest_run(frames, levels):
+def loudest_run(frames, levels, max_gap):
     """Находит кусок звука с наибольшей энергией: хвосты соседних слов тише."""
     runs = []
     for frame in frames:
-        if runs and frame - runs[-1][1] <= MAX_GAP_FRAMES:
+        if runs and frame - runs[-1][1] <= max_gap:
             runs[-1][1] = frame
         else:
             runs.append([frame, frame])
     return max(runs, key=lambda run: np.sum(10 ** (levels[run[0]:run[1] + 1] / 10)))
 
 
-def refine_word(word, voiced, levels):
+def refine_word(word, voiced, levels, cfg):
     """Сужает границы слова до основного звука внутри его исходного отрезка."""
     if word.get("manual"):
         return
@@ -76,26 +68,28 @@ def refine_word(word, voiced, levels):
     start = word.setdefault("raw_start", word["start"])
     end = word.setdefault("raw_end", word["end"])
 
-    first_frame = max(0, int(start / FRAME_SECONDS))  # Whisper бывает отдаёт начало меньше нуля
-    found = np.flatnonzero(voiced[first_frame:int(np.ceil(end / FRAME_SECONDS))])
+    frame_seconds = cfg["frame_seconds"]
+    first_frame = max(0, int(start / frame_seconds))  # Whisper бывает отдаёт начало меньше нуля
+    found = np.flatnonzero(voiced[first_frame:int(np.ceil(end / frame_seconds))])
     if found.size == 0:
         word["start"], word["end"] = max(0.0, start), end
         return
 
-    run_start, run_end = loudest_run(found + first_frame, levels)
-    voice_start = run_start * FRAME_SECONDS
-    voice_end = (run_end + 1) * FRAME_SECONDS
-    word["start"] = round(max(start, 0.0, voice_start - PAD_START), 3)
-    word["end"] = round(min(end, voice_end + PAD_END), 3)
+    run_start, run_end = loudest_run(found + first_frame, levels, cfg["max_gap_frames"])
+    voice_start = run_start * frame_seconds
+    voice_end = (run_end + 1) * frame_seconds
+    word["start"] = round(max(start, 0.0, voice_start - cfg["pad_start"]), 3)
+    word["end"] = round(min(end, voice_end + cfg["pad_end"]), 3)
 
 
 def refine_timeline(data, audio_path):
     """Обновляет таймкоды слов, кадры и границы фраз в данных таймлайна."""
-    voiced, levels = analyze(load_mono(audio_path))
+    cfg = settings_for(audio_path)["refine"]
+    voiced, levels = analyze(load_mono(audio_path), cfg)
     fps = data.get("fps")
 
     for word in data["words"]:
-        refine_word(word, voiced, levels)
+        refine_word(word, voiced, levels, cfg)
         if fps:
             word["start_frame"] = round(word["start"] * fps)
             word["end_frame"] = round(word["end"] * fps)

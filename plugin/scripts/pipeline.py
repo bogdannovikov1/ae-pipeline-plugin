@@ -16,7 +16,7 @@ from pathlib import Path
 
 from approve_transcript import transcript_hash
 from settings import PLUGIN_ROOT, load_settings
-from validate import run_check
+from validate import check_built, file_hash, run_check
 
 STATE_FILE = "state.json"
 REPORTS_DIR = "reviews"
@@ -27,14 +27,6 @@ STATE_VERSION = 2
 
 class PipelineError(Exception):
     """Действие запрещено состоянием этапов."""
-
-
-def file_hash(path):
-    digest = hashlib.sha256()
-    with open(path, "rb") as file:
-        for chunk in iter(lambda: file.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def load_stages():
@@ -155,6 +147,8 @@ class Fragment:
             names = {"timeline": f"{self.name}.timeline.json"}
             path = self.folder / self.names(stage["outputs"])[0]
             errors = run_check(stage["validate"], path, self.folder, names, self.settings, final)
+            if not errors and stage.get("needs_build"):
+                errors = check_built(path)
         if not errors and self.state.get("parts"):
             errors = self.check_extension(stage)
         return errors
@@ -357,7 +351,10 @@ class Fragment:
 
     def done(self, stage_id):
         stage = self.stage(stage_id)
-        if self.status(stage_id) != "running":
+        self.refresh()
+        # Правка готовой сцены завершается без start: иначе она зря перезапускала бы этап.
+        edited = stage["review"] == "auto" and self.status(stage_id) == "stale"
+        if self.status(stage_id) != "running" and not edited:
             raise PipelineError(f"Этап {stage_id} не запущен")
         if stage["review"] == "rounds":
             raise PipelineError("Предревью завершает команда round")

@@ -13,7 +13,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from settings import load_settings
+from settings import settings_for
 
 TIME_FIELDS = ("start", "end", "raw_start", "raw_end")
 
@@ -74,7 +74,7 @@ def main():
     if part["source"] in [item["audio"] for item in known]:
         sys.exit(f"Часть уже добавлена: {part['source']}")
 
-    gap = load_settings()["extend"]["gap_seconds"]
+    gap = settings_for(args.timeline)["extend"]["gap_seconds"]
     offset = known[-1]["at"] + audio_duration(args.timeline.parent / known[-1]["audio"]) + gap
     shutil.copy(args.timeline, args.timeline.with_name(args.timeline.name.replace(".timeline.", ".timeline.backup.")))
     merge(data, part, offset)

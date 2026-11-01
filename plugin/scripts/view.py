@@ -14,7 +14,7 @@ import re
 import sys
 from pathlib import Path
 
-from settings import load_settings
+from settings import settings_for
 from validate import read_json, resolve_base, resolve_path
 
 
@@ -149,7 +149,7 @@ def main():
     parser.add_argument("--review", action="store_true", help="для text: только слова на проверку")
     args = parser.parse_args()
 
-    settings = load_settings()
+    settings = settings_for(args.path)
     timing = settings["timing"]
     if args.command == "hash":
         lines = [read_json(args.path).get("transcript_hash", "транскрипт не заморожен")]

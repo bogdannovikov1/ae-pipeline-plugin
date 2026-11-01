@@ -11,6 +11,7 @@ state.json              состояние этапов
 <f>.scene.json          сцена для движка
 blocks/<id>/            блоки этого видео, главнее блоков базы
 <f>.sounds.json         журнал звуков последней сборки
+<f>.build.json          отметка успешной сборки с хэшем сцены
 reviews/round_N.json    отчёты предревью
 reviews/manual_N.json   отчёты разового ревью
 frames/round_N/         кадры, листы и index.json

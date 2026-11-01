@@ -14,9 +14,11 @@ import subprocess
 import sys
 import tempfile
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
-from settings import PLUGIN_ROOT, bases_dir, load_settings
+from settings import PLUGIN_ROOT, bases_dir, load_settings, settings_for
+from validate import build_stamp_path, file_hash
 
 BUILD_SCRIPT = PLUGIN_ROOT / "ae" / "engine" / "build_scene.jsx"
 REVIEW_SCRIPT = PLUGIN_ROOT / "ae" / "open_review.jsx"
@@ -121,13 +123,15 @@ def main():
     parser.add_argument("--video", type=Path, help="папка видео с её настройками")
     args = parser.parse_args()
 
-    settings = load_settings(args.video)
+    settings = load_settings(args.video) if args.video else settings_for(args.path)
     try:
         if args.command == "build":
             values = {"SCENE_PATH": args.path.resolve(), "BASES_DIR": bases_dir(settings)}
             if args.append_from is not None:
                 values["APPEND_FROM"] = args.append_from
             run_jsx(BUILD_SCRIPT, values, settings)
+            stamp = {"scene_hash": file_hash(args.path), "built_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+            build_stamp_path(args.path).write_text(json.dumps(stamp, indent=2), encoding="utf-8")
         elif args.command == "review":
             launch(settings, args.launch)
             ae = settings["ae"]

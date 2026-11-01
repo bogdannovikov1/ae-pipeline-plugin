@@ -12,10 +12,11 @@ from base_scan import scan
 from capture import moments
 from extend_timeline import merge as merge_part
 from pipeline import Fragment, PipelineError
-from settings import load_settings, merge
+from settings import find_video, load_settings, merge
 from sound_measure import trailing_start
 from view import sound_log_path, sound_warnings, review_lines, scene_lines, text_lines, timing_warnings
 from setup_base import STARTER, create_base
+from validate import check_built, file_hash
 from validate import check_animation, check_scene, check_timeline
 
 
@@ -48,6 +49,11 @@ class Case(unittest.TestCase):
         path.write_text(value if isinstance(value, str) else json.dumps(value))
         return path
 
+    def write_scene(self, scene):
+        path = self.write("F1.scene.json", scene)
+        self.write("F1.build.json", {"scene_hash": file_hash(path)})
+        return path
+
     def fragment(self):
         fragment = Fragment(self.video, "F1", settings=self.settings)
         if not fragment.state:
@@ -71,7 +77,7 @@ class Case(unittest.TestCase):
         f.done("plan")
         f.approve("plan")
         f.start("build")
-        self.write("F1.scene.json", self.scene())
+        self.write_scene(self.scene())
         f.done("build")
         f.start("preflight")
         return f
@@ -80,9 +86,41 @@ class Case(unittest.TestCase):
         self.write(f"reviews/round_{number}.json", {"findings": list(findings)})
 
 
+class Built(Case):
+    def test_needs_stamp_of_this_scene(self):
+        path = self.write("F1.scene.json", self.scene())
+        self.assertIn("не собрана", check_built(path)[0])
+        self.write_scene(self.scene())
+        self.assertEqual(check_built(path), [])
+        self.write("F1.scene.json", self.scene(tail=2))
+        self.assertIn("изменилась", check_built(path)[0])
+
+    def test_done_refuses_unbuilt_scene(self):
+        f = self.to_preflight()
+        f.state["stages"]["preflight"]["status"] = "pending"
+        f.save()
+        self.write("F1.scene.json", self.scene(tail=3))
+        f.refresh()
+        self.assertEqual(f.status("build"), "stale")
+        with self.assertRaises(PipelineError):
+            f.done("build")
+
+    def test_edit_finishes_without_start(self):
+        f = self.to_preflight()
+        f.state["stages"]["preflight"]["status"] = "pending"
+        f.save()
+        self.write_scene(self.scene(tail=3))
+        f.done("build")
+        self.assertEqual(f.status("build"), "approved")
+
+
 class Settings(Case):
     def test_merge_keeps_neighbours(self):
         self.assertEqual(merge({"a": {"x": 1, "y": 2}}, {"a": {"y": 3}}), {"a": {"x": 1, "y": 3}})
+
+    def test_video_found_from_file(self):
+        self.assertEqual(find_video(self.dir / "F1.wav"), self.video.resolve())
+        self.assertIsNone(find_video(self.root / "other.wav"))
 
     def test_video_layer_wins(self):
         (self.video / "settings.json").write_text('{"review": {"max_rounds": 5}}')
@@ -180,7 +218,7 @@ class Stages(Case):
         self.assertEqual(f.next_action()["action"], "finished")
 
         scene = self.scene(tail=2)
-        self.write("F1.scene.json", scene)
+        self.write_scene(scene)
         self.assertEqual(f.next_action()["stage"], "build")
         f.start("build")
         f.done("build")
@@ -228,7 +266,7 @@ class BaseUpdate(Case):
         block.mkdir(parents=True)
         items = [{"block": "label", "at_word": 1, "tokens": {"motion": {"lead": 0.2}}},
                  {"block": "label", "at_word": 2, "tokens": {"motion": {"lead": 0.2}}}]
-        self.write("F1.scene.json", self.scene(items=items))
+        self.write_scene(self.scene(items=items))
         result = scan(self.video, 2)
         self.assertEqual(result["local_blocks"], ["F1/new_block"])
         self.assertEqual(result["repeated_findings"], {"color.contrast": 2})
@@ -292,15 +330,15 @@ class Extend(Case):
 
         f.start("build")
         old = self.scene()["items"]
-        self.write("F1.scene.json", self.scene(items=[{"id": "x", "block": "label", "at_word": 1}]))
+        self.write_scene(self.scene(items=[{"id": "x", "block": "label", "at_word": 1}]))
         with self.assertRaises(PipelineError):
             f.done("build")
         new = {"id": "b", "block": "label", "at_word": 4, "params": {"target": "a"}}
-        self.write("F1.scene.json", self.scene(items=old + [new]))
+        self.write_scene(self.scene(items=old + [new]))
         with self.assertRaises(PipelineError):
             f.done("build")
         new["params"] = {}
-        self.write("F1.scene.json", self.scene(items=old + [new]))
+        self.write_scene(self.scene(items=old + [new]))
         f.done("build")
         self.assertEqual(f.next_action()["extension"]["from_time"], 10.0)
 
@@ -372,7 +410,7 @@ class Extend(Case):
         f = self.extended()
         scene = self.scene()
         scene["items"].append({"id": "b", "block": "label", "at_word": 4})
-        self.write("F1.scene.json", scene)
+        self.write_scene(scene)
         self.assertTrue(f.cancel_extend()["composition_changed"])
 
     def test_cancel_needs_extension(self):
@@ -537,7 +575,7 @@ class OptionalPreflight(Case):
         f = self.to_preflight()
         self.report(1, Rounds.major)
         self.assertEqual(f.round()["decision"], "fix")
-        self.write("F1.scene.json", self.scene(tail=2))
+        self.write_scene(self.scene(tail=2))
         f.finish("preflight")
         self.assertEqual(f.next_action()["stage"], "polish")
 
@@ -584,7 +622,7 @@ class Rounds(Case):
         f = self.to_preflight()
         self.report(1, self.major)
         f.round()
-        self.write("F1.scene.json", self.scene(tail=2))
+        self.write_scene(self.scene(tail=2))
         self.report(2)
         self.assertEqual(f.round()["decision"], "author")
         self.assertEqual(f.next_action()["stage"], "polish")

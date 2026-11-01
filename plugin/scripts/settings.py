@@ -37,6 +37,19 @@ def load_settings(video=None, user_path=USER_PATH):
     return settings
 
 
+def find_video(path):
+    """Папка видео — та, что содержит fragments/ над файлом. Для файлов вне видео возвращает None."""
+    for parent in Path(path).expanduser().resolve().parents:
+        if parent.name == "fragments":
+            return parent.parent
+    return None
+
+
+def settings_for(path):
+    """Настройки с учётом видео, к которому относится файл."""
+    return load_settings(find_video(path))
+
+
 def bases_dir(settings):
     return Path(settings["bases_dir"]).expanduser()
 

@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 
 from ae_run import run_jsx
-from settings import PLUGIN_ROOT, load_settings
+from settings import PLUGIN_ROOT, load_settings, settings_for
 from validate import read_json, resolve_base, resolve_path
 
 CAPTURE_SCRIPT = PLUGIN_ROOT / "ae" / "capture_frames.jsx"
@@ -83,7 +83,7 @@ def main():
     parser.add_argument("--video", type=Path, help="папка видео с её настройками")
     args = parser.parse_args()
 
-    settings = load_settings(args.video)
+    settings = load_settings(args.video) if args.video else settings_for(args.scene)
     review = settings["review"]
     scene_path = args.scene.resolve()
     scene = read_json(scene_path)

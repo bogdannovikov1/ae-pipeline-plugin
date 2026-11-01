@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 from refine_timings import refine_timeline
-from settings import load_settings
+from settings import settings_for
 
 SCHEMA_VERSION = 4
 
@@ -54,21 +54,25 @@ def build_timeline(result, fps, review_below):
 
 
 def main():
-    settings = load_settings()["transcribe"]
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("audio", type=Path, help="путь к аудиофайлу")
     parser.add_argument("-o", "--output", type=Path, help="куда сохранить JSON (по умолчанию <аудио>.timeline.json)")
-    parser.add_argument("--language", default=settings["language"], help="язык записи")
-    parser.add_argument("--model", default=settings["model"], help="модель MLX Whisper")
+    parser.add_argument("--language", help="язык записи, по умолчанию из настроек")
+    parser.add_argument("--model", help="модель MLX Whisper")
     parser.add_argument("--prompt", help="подсказка с терминами и брендами")
     parser.add_argument("--fps", type=float, help="добавить номера кадров для этой частоты")
-    parser.add_argument("--review-below", type=float, default=settings["review_below"], help="порог уверенности для пометки needs_review")
+    parser.add_argument("--review-below", type=float, help="порог уверенности для пометки needs_review")
     parser.add_argument("--no-refine", action="store_true", help="не подрезать границы слов по звуку")
     parser.add_argument("--force", action="store_true", help="перезаписать готовый транскрипт вместе с его ревью")
     args = parser.parse_args()
 
     if not args.audio.is_file():
         sys.exit(f"Файл не найден: {args.audio}")
+
+    settings = settings_for(args.audio)["transcribe"]
+    args.language = args.language or settings["language"]
+    args.model = args.model or settings["model"]
+    args.review_below = settings["review_below"] if args.review_below is None else args.review_below
 
     output = args.output or args.audio.with_suffix(".timeline.json")
     if output.exists() and not args.force:

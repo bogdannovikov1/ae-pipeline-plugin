@@ -6,12 +6,38 @@
     python3 validate.py scene F1.scene.json
 """
 import argparse
+import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 
 from approve_transcript import transcript_hash
-from settings import bases_dir, load_settings
+from settings import bases_dir, settings_for
+
+
+def file_hash(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as file:
+        for chunk in iter(lambda: file.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def build_stamp_path(scene):
+    """Отметка успешной сборки: её пишет ae_run.py, а не агент."""
+    scene = Path(scene)
+    return scene.with_name(re.sub(r"(\.scene)?\.json$", ".build.json", scene.name))
+
+
+def check_built(scene):
+    """Сборка считается состоявшейся, если AE собрал именно эту версию сцены."""
+    stamp = build_stamp_path(scene)
+    if not stamp.is_file():
+        return ["сцена не собрана: нет отметки сборки, запустите ae_run.py build"]
+    if read_json(stamp)["scene_hash"] != file_hash(scene):
+        return ["сцена изменилась после сборки, пересоберите её"]
+    return []
 
 
 def read_json(path):
@@ -83,7 +109,7 @@ def resolve_base(value, settings):
 
 def check_scene(path, settings=None):
     """Проверяет сцену: файлы, транскрипт, блоки и ссылки между элементами."""
-    settings = settings or load_settings()
+    settings = settings or settings_for(path)
     path = Path(path)
     scene = read_json(path)
     folder = path.parent

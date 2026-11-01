@@ -45,7 +45,8 @@
         "{f}.scene.json"
       ],
       "validate": "scene",
-      "review": "auto"
+      "review": "auto",
+      "needs_build": true
     },
     {
       "id": "preflight",
