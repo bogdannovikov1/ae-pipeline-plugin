@@ -59,6 +59,10 @@ frames/round_N/         кадры, листы и index.json
 
 Пути относительно папки сцены или абсолютные, база задаётся именем или путём. Время элемента: `at_word`, `after` (id элемента) или `at` (секунды), плюс необязательный `delay`. `always: true` ставит элемент на всю длину. `anchor_reason` объясняет, почему элемент намеренно стоит в начале длинной фразы: проверка тайминга его не трогает.
 
+## sounds.json
+
+Журнал звуков последней сборки: `{ "sounds": [{ "item", "sound", "event", "start", "end", "animation_start", "animation_end" }] }`. Его проверяет `view.py sounds`.
+
 ## state.json
 
 `version` (2), `fragment`, `audio`, `parts`, `rounds`, `stages`. Запись в `parts`: `audio`, `keep` (что расширение не должно изменить), `append` (была ли ручная доводка), `stages_before` (статусы до расширения, для отмены). Запись этапа: `status`, `note`, `inputs`, `outputs` (хэши файлов), `settings` (хэш настроек), `finished_at`, у пропущенного этапа `skipped: true`.
