@@ -9,10 +9,12 @@
 import argparse
 import hashlib
 import json
+import shutil
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from approve_transcript import transcript_hash
 from settings import PLUGIN_ROOT, load_settings
 from validate import run_check
 
@@ -221,11 +223,93 @@ class Fragment:
             "audio": audio,
             "keep": self.snapshot(),
             "append": self.status("polish") == "approved",
+            "stages_before": {stage["id"]: self.status(stage["id"]) for stage in self.stages},
         })
         self.state["rounds"] = 0
         for stage in self.stages:
             self.state["stages"][stage["id"]] = {"status": "pending", "note": None}
         self.save()
+
+    def statuses_before(self, part):
+        """Статусы до расширения. Старые записи их не хранят: восстанавливаем по тому, что было готово."""
+        if "stages_before" in part:
+            return part["stages_before"]
+        keep = part["keep"]
+        built = keep["items_from"] > 0
+        finished = part["append"]
+        return {
+            "transcript": "approved",
+            "plan": "approved",
+            "build": "approved" if built else "pending",
+            "preflight": "approved" if finished else "pending",
+            "polish": "approved" if finished else "pending",
+            "curate": "approved" if (self.folder / f"{self.name}.base_proposals.md").is_file() else "pending",
+        }
+
+    def restored_timeline(self, keep):
+        """Возвращает транскрипт без новой части. Первая часть обязана остаться прежней."""
+        name = f"{self.name}.timeline.json"
+        backup = self.folder / f"{self.name}.timeline.backup.json"
+        if backup.is_file():
+            saved = json.loads(backup.read_text(encoding="utf-8"))
+            if len(saved["words"]) == keep["first_word"] and list_hash(kept_words(saved["words"])) == keep["words"]:
+                return frozen(saved)
+        data = json.loads((self.folder / name).read_text(encoding="utf-8"))
+        count = keep["first_word"]
+        data["words"] = data["words"][:count]
+        if list_hash(kept_words(data["words"])) != keep["words"]:
+            raise PipelineError("Слова первой части изменились, автоматический откат невозможен")
+        data["phrases"] = [phrase for phrase in data["phrases"] if phrase["last_word"] < count]
+        data["text"] = " ".join(phrase["text"] for phrase in data["phrases"])
+        data.pop("parts", None)
+        return frozen(data)
+
+    def cancel_extend(self):
+        """Отменяет последнюю часть: файлы и статусы этапов возвращаются к состоянию до extend."""
+        if not self.state.get("parts"):
+            raise PipelineError("Расширения нет, отменять нечего")
+        part = self.state["parts"][-1]
+        keep = part["keep"]
+
+        plan = self.read("animation")
+        scene = self.read("scene")
+        if plan and list_hash(plan["beats"][:keep["beats_from"]]) != keep["beats"]:
+            raise PipelineError("Старые биты плана изменились, автоматический откат невозможен")
+        if scene and list_hash(scene["items"][:keep["items_from"]]) != keep["items"]:
+            raise PipelineError("Старые элементы сцены изменились, автоматический откат невозможен")
+
+        was_built = bool(scene) and len(scene["items"]) > keep["items_from"]
+        timeline_data = self.restored_timeline(keep)
+        for name in (f"{self.name}.timeline.json", f"{self.name}.animation.json", f"{self.name}.scene.json"):
+            path = self.folder / name
+            if path.is_file():
+                shutil.copy(path, path.with_name(name.replace(".json", ".extended.json")))
+
+        self.write_json("timeline", timeline_data)
+        if plan:
+            plan["beats"] = plan["beats"][:keep["beats_from"]]
+            plan["transcript_hash"] = timeline_data["transcript_hash"]
+            self.write_json("animation", plan)
+        if scene:
+            scene["items"] = scene["items"][:keep["items_from"]]
+            if "transcript_hash" in scene:
+                scene["transcript_hash"] = timeline_data["transcript_hash"]
+            self.write_json("scene", scene)
+
+        statuses = self.statuses_before(part)
+        self.state["parts"].pop()
+        self.state["rounds"] = 0
+        for stage in self.stages:
+            status = statuses[stage["id"]]
+            self.state["stages"][stage["id"]] = {"status": "pending", "note": None}
+            if status in ("approved", "review"):
+                self.seal(stage, status)
+        self.save()
+        return {"cancelled": part["audio"], "words": keep["first_word"], "composition_changed": was_built and part["append"]}
+
+    def write_json(self, suffix, data):
+        path = self.folder / f"{self.name}.{suffix}.json"
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def extension(self):
         """Что должен знать исполнитель этапа, когда идёт новая часть."""
@@ -435,6 +519,13 @@ def kept_words(words):
     return [[w["i"], w["word"], w["start"], w["end"]] for w in words]
 
 
+def frozen(data):
+    """Транскрипт до расширения был заморожен, резервная копия могла быть снята раньше заморозки."""
+    data["status"] = "approved"
+    data["transcript_hash"] = transcript_hash(data)
+    return data
+
+
 def finding_key(finding):
     """Находка считается той же, если совпали закон и момент."""
     return finding.get("rule"), finding.get("time")
@@ -442,7 +533,7 @@ def finding_key(finding):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("command", choices=["init", "status", "next", "start", "done", "approve", "reject", "round", "extend", "skip", "finish"])
+    parser.add_argument("command", choices=["init", "status", "next", "start", "done", "approve", "reject", "round", "extend", "skip", "finish", "cancel-extend"])
     parser.add_argument("video", type=Path, help="папка видео")
     parser.add_argument("fragment", help="имя фрагмента")
     parser.add_argument("stage", nargs="?", help="этап для start, done, approve, reject, skip, finish")
@@ -464,6 +555,8 @@ def main():
             result = fragment.next_action()
         elif args.command == "round":
             result = fragment.round()
+        elif args.command == "cancel-extend":
+            result = dict(fragment.cancel_extend(), next=fragment.next_action())
         elif args.command == "extend":
             if not args.audio:
                 parser.error("укажите --audio")

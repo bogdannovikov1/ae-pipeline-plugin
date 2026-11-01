@@ -15,6 +15,7 @@ reviews/manual_N.json   отчёты разового ревью
 frames/round_N/         кадры, листы и index.json
 <f>.aep                 проект фрагмента: ревью маркеров, сборка, доводка
 <f>.base_proposals.md   предложения для базы
+<f>.*.extended.json     копии до отмены расширения
 ```
 
 ## timeline.json
@@ -59,7 +60,7 @@ frames/round_N/         кадры, листы и index.json
 
 ## state.json
 
-`version` (2), `fragment`, `audio`, `parts`, `rounds`, `stages`. Запись в `parts`: `audio`, `keep` (что расширение не должно изменить), `append` (была ли ручная доводка). Запись этапа: `status`, `note`, `inputs`, `outputs` (хэши файлов), `settings` (хэш настроек), `finished_at`, у пропущенного этапа `skipped: true`.
+`version` (2), `fragment`, `audio`, `parts`, `rounds`, `stages`. Запись в `parts`: `audio`, `keep` (что расширение не должно изменить), `append` (была ли ручная доводка), `stages_before` (статусы до расширения, для отмены). Запись этапа: `status`, `note`, `inputs`, `outputs` (хэши файлов), `settings` (хэш настроек), `finished_at`, у пропущенного этапа `skipped: true`.
 
 Статусы: `pending`, `running`, `review`, `approved`, `rejected`, `stale`. Файл меняет только `pipeline.py`.
 

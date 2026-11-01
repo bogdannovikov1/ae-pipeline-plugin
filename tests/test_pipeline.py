@@ -305,6 +305,70 @@ class Extend(Case):
         with self.assertRaises(PipelineError):
             f.done("transcript")
 
+    def extended(self):
+        f = self.polished()
+        self.write("F1_p2.wav", "new audio")
+        f.extend("F1_p2.wav")
+        f.start("transcript")
+        self.write("F1.timeline.json", self.merged())
+        f.done("transcript")
+        f.approve("transcript")
+        return f
+
+    def test_cancel_restores_files_and_stages(self):
+        f = self.extended()
+        hash_ = timeline()["transcript_hash"]
+        f.start("plan")
+        self.write("F1.animation.json", {"transcript_hash": "новый", "beats": [{"at_word": 0}, {"at_word": 4}]})
+        result = f.cancel_extend()
+        self.assertEqual(result["words"], 4)
+        data = json.loads((self.dir / "F1.timeline.json").read_text())
+        self.assertEqual(len(data["words"]), 4)
+        self.assertEqual(data["transcript_hash"], hash_)
+        self.assertNotIn("parts", data)
+        plan = json.loads((self.dir / "F1.animation.json").read_text())
+        self.assertEqual((len(plan["beats"]), plan["transcript_hash"]), (1, hash_))
+        self.assertEqual(f.state["parts"], [])
+        self.assertEqual(check_timeline(self.dir / "F1.timeline.json", final=True), [])
+        self.assertTrue((self.dir / "F1.timeline.extended.json").exists())
+        for stage in ("transcript", "plan", "build", "preflight", "polish"):
+            self.assertEqual(f.status(stage), "approved", stage)
+        self.assertEqual(f.next_action()["stage"], "curate")
+
+    def test_cancel_uses_unfrozen_backup(self):
+        f = self.extended()
+        self.write("F1.timeline.backup.json", timeline("draft"))
+        data = json.loads((self.dir / "F1.timeline.backup.json").read_text())
+        data.pop("transcript_hash")
+        self.write("F1.timeline.backup.json", data)
+        f.cancel_extend()
+        self.assertEqual(check_timeline(self.dir / "F1.timeline.json", final=True), [])
+
+    def test_cancel_works_for_state_without_saved_statuses(self):
+        f = self.extended()
+        del f.state["parts"][-1]["stages_before"]
+        f.cancel_extend()
+        self.assertEqual(f.status("polish"), "approved")
+        self.assertEqual(f.next_action()["stage"], "curate")
+
+    def test_cancel_refuses_when_old_part_changed(self):
+        f = self.extended()
+        self.write("F1.animation.json", {"transcript_hash": "x", "beats": [{"at_word": 2}]})
+        with self.assertRaises(PipelineError):
+            f.cancel_extend()
+        self.assertEqual(len(f.state["parts"]), 1)
+
+    def test_cancel_reports_appended_layers(self):
+        f = self.extended()
+        scene = self.scene()
+        scene["items"].append({"id": "b", "block": "label", "at_word": 4})
+        self.write("F1.scene.json", scene)
+        self.assertTrue(f.cancel_extend()["composition_changed"])
+
+    def test_cancel_needs_extension(self):
+        with self.assertRaises(PipelineError):
+            self.fragment().cancel_extend()
+
     def test_needs_approved_plan_and_audio(self):
         f = self.fragment()
         with self.assertRaises(PipelineError):
