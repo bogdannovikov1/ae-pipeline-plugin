@@ -1,6 +1,6 @@
 // Builds a composition from a scene JSON using the blocks of its base.
 // Run: File > Scripts > Run Script File... and select a scene file.
-// Automation sets $.global.SCENE_PATH and gets errors thrown instead of alerts.
+// Automation sets $.global.SCENE_PATH and BASES_DIR and gets errors thrown instead of alerts.
 
 #include "../lib/timeline.jsxinc"
 
@@ -24,10 +24,27 @@
         return Engine.blocks[id];
     }
 
+    // Paths may be relative to the scene, so a video folder can move between machines.
+    function resolvePath(value, folder) {
+        var first = value.charAt(0);
+        return first === "/" || first === "~" ? value : folder + "/" + value;
+    }
+
+    // A base is a path or a name inside the bases folder from the plugin settings.
+    function resolveBase(value, folder) {
+        if (value.indexOf("/") === -1 && $.global.BASES_DIR) {
+            return $.global.BASES_DIR + "/" + value;
+        }
+        return resolvePath(value, folder);
+    }
+
     function prepare(scenePath) {
         var scene = Timeline.readJson(new File(scenePath));
-        Engine.base = scene.base;
         Engine.sceneFolder = new File(scenePath).parent.fsName;
+        scene.base = resolveBase(scene.base, Engine.sceneFolder);
+        scene.audio = resolvePath(scene.audio, Engine.sceneFolder);
+        scene.timeline = resolvePath(scene.timeline, Engine.sceneFolder);
+        Engine.base = scene.base;
         Engine.tokens = Timeline.readJson(new File(scene.base + "/tokens.json"));
         Engine.tokens = Engine.overlay(Engine.tokens, scene.tokens || {});
         Engine.assets = Timeline.readJson(new File(scene.base + "/assets/assets.json"));

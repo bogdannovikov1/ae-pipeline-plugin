@@ -10,8 +10,8 @@ import sys
 from pathlib import Path
 
 from refine_timings import refine_timeline
+from settings import load_settings
 
-DEFAULT_MODEL = "mlx-community/whisper-large-v3-turbo"
 SCHEMA_VERSION = 4
 
 
@@ -54,14 +54,15 @@ def build_timeline(result, fps, review_below):
 
 
 def main():
+    settings = load_settings()["transcribe"]
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("audio", type=Path, help="путь к аудиофайлу")
     parser.add_argument("-o", "--output", type=Path, help="куда сохранить JSON (по умолчанию <аудио>.timeline.json)")
-    parser.add_argument("--language", default="ru", help="язык записи (по умолчанию ru)")
-    parser.add_argument("--model", default=DEFAULT_MODEL, help="модель MLX Whisper")
+    parser.add_argument("--language", default=settings["language"], help="язык записи")
+    parser.add_argument("--model", default=settings["model"], help="модель MLX Whisper")
     parser.add_argument("--prompt", help="подсказка с терминами и брендами")
     parser.add_argument("--fps", type=float, help="добавить номера кадров для этой частоты")
-    parser.add_argument("--review-below", type=float, default=0.6, help="порог уверенности для пометки needs_review")
+    parser.add_argument("--review-below", type=float, default=settings["review_below"], help="порог уверенности для пометки needs_review")
     parser.add_argument("--no-refine", action="store_true", help="не подрезать границы слов по звуку")
     parser.add_argument("--force", action="store_true", help="перезаписать готовый транскрипт вместе с его ревью")
     args = parser.parse_args()

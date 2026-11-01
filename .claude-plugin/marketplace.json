@@ -1,0 +1,14 @@
+{
+  "name": "ae-video-local",
+  "description": "Локальный каталог для разработки плагина ae-video",
+  "owner": {
+    "name": "Bogdan"
+  },
+  "plugins": [
+    {
+      "name": "ae-video",
+      "source": "./plugin",
+      "description": "Видео в After Effects из записи голоса и базы анимаций"
+    }
+  ]
+}

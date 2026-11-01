@@ -1,7 +1,7 @@
 {
-  "base": "/Users/bogdan/Documents/Projects/Videos/bases/base_algoritms",
-  "audio": "/Users/bogdan/Documents/Projects/Video_BigO/audio/A2.wav",
-  "timeline": "/Users/bogdan/Documents/Projects/Video_BigO/audio/A2.timeline.json",
+  "base": "base_algoritms",
+  "audio": "demo.wav",
+  "timeline": "demo.timeline.json",
   "tail": 0.8,
   "comp": {
     "name": "blocks_demo",

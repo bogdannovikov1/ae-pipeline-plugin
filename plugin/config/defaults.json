@@ -1,0 +1,44 @@
+{
+  "bases_dir": "~/Documents/Projects/Videos/bases",
+  "base": "base_algoritms",
+  "transcribe": {
+    "model": "mlx-community/whisper-large-v3-turbo",
+    "language": "ru",
+    "review_below": 0.6
+  },
+  "refine": {
+    "frame_seconds": 0.01,
+    "min_voiced_frames": 2,
+    "max_gap_frames": 15,
+    "max_below_speech_db": 40,
+    "pad_start": 0.03,
+    "pad_end": 0.04,
+    "threshold_position": 0.25
+  },
+  "ae": {
+    "app": "Adobe After Effects 2026",
+    "timeout": 500,
+    "autosave_projects": [
+      "~/Documents/Projects/Videos/copy_*",
+      "~/Documents/Projects/Videos/test_*"
+    ]
+  },
+  "review": {
+    "max_rounds": 3,
+    "block_on": "major",
+    "max_frames": 48,
+    "offsets": [
+      -0.1,
+      0.0,
+      0.25
+    ],
+    "frame_timeout": 240,
+    "sheet_columns": 4,
+    "sheet_rows": 4,
+    "sheet_frame_width": 480
+  },
+  "base_update": {
+    "every_fragments": 1,
+    "min_repeats": 2
+  }
+}

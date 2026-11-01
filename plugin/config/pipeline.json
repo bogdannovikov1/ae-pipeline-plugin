@@ -1,0 +1,98 @@
+{
+  "stages": [
+    {
+      "id": "transcript",
+      "title": "Транскрипт",
+      "executor": "transcriber",
+      "needs": [],
+      "inputs": [
+        "{audio}"
+      ],
+      "outputs": [
+        "{f}.timeline.json"
+      ],
+      "validate": "timeline",
+      "review": "author"
+    },
+    {
+      "id": "plan",
+      "title": "План анимации",
+      "executor": "orchestrator",
+      "needs": [
+        "transcript"
+      ],
+      "inputs": [
+        "{f}.timeline.json"
+      ],
+      "outputs": [
+        "{f}.animation.json"
+      ],
+      "validate": "animation",
+      "review": "author"
+    },
+    {
+      "id": "build",
+      "title": "Сборка",
+      "executor": "animator",
+      "needs": [
+        "plan"
+      ],
+      "inputs": [
+        "{f}.timeline.json",
+        "{f}.animation.json"
+      ],
+      "outputs": [
+        "{f}.scene.json"
+      ],
+      "validate": "scene",
+      "review": "auto"
+    },
+    {
+      "id": "preflight",
+      "title": "Предревью",
+      "executor": "reviewer",
+      "needs": [
+        "build"
+      ],
+      "inputs": [
+        "{f}.scene.json"
+      ],
+      "outputs": [],
+      "review": "rounds"
+    },
+    {
+      "id": "polish",
+      "title": "Доводка автором",
+      "executor": "author",
+      "needs": [
+        "preflight"
+      ],
+      "inputs": [
+        "{f}.scene.json"
+      ],
+      "outputs": [
+        "{f}.aep"
+      ],
+      "track_outputs": false,
+      "protected": true,
+      "review": "author"
+    },
+    {
+      "id": "curate",
+      "title": "Обновление базы",
+      "executor": "librarian",
+      "needs": [
+        "polish"
+      ],
+      "inputs": [
+        "{f}.scene.json"
+      ],
+      "outputs": [
+        "{f}.base_proposals.md"
+      ],
+      "track_outputs": false,
+      "periodic": true,
+      "review": "author"
+    }
+  ]
+}

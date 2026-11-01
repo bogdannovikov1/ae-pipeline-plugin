@@ -108,14 +108,14 @@ Before writing or executing any action script, resolve the skill's real (non-sym
 
 Run this once at the start of each session:
 ```bash
-SKILL_SCRIPTS="$(readlink -f ~/.claude/skills/after-effects-assistant/scripts 2>/dev/null || readlink ~/.claude/skills/after-effects-assistant/scripts)"
+SKILL_SCRIPTS="$(cd "${CLAUDE_PLUGIN_ROOT}/skills/after-effects/scripts" && pwd -P)"
 echo "$SKILL_SCRIPTS"
 ```
 
 Use the resolved path (`$SKILL_SCRIPTS`) for all subsequent Write and Bash commands in this session.
 
 **Why this matters:**
-- `~/.claude/skills/` is typically a symlink — ExtendScript `#include` fails through symlinks
+- The plugin folder may be reached through a symlink — ExtendScript `#include` fails through symlinks
 - Writing to the real `scripts/` directory lets `#include "lib/json2.jsx"` resolve correctly
 - The resolved path changes per machine, so never hardcode it
 

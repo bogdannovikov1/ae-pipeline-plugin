@@ -15,14 +15,17 @@ from pathlib import Path
 
 import numpy as np
 
+from settings import load_settings
+
 SAMPLE_RATE = 16000
-FRAME_SECONDS = 0.01
-MIN_VOICED_FRAMES = 2  # короткие щелчки не считаем речью
-MAX_GAP_FRAMES = 15  # тишина длиннее 150 мс разделяет звук на отдельные куски
-MAX_BELOW_SPEECH_DB = 40  # всё, что настолько тише речи, не считаем речью
-PAD_START = 0.03  # запас, чтобы не срезать тихое начало слова
-PAD_END = 0.04
-THRESHOLD_POSITION = 0.25  # порог между шумом (0) и громкой речью (1)
+SETTINGS = load_settings()["refine"]
+FRAME_SECONDS = SETTINGS["frame_seconds"]
+MIN_VOICED_FRAMES = SETTINGS["min_voiced_frames"]  # короткие щелчки не считаем речью
+MAX_GAP_FRAMES = SETTINGS["max_gap_frames"]  # более длинная тишина разделяет звук на отдельные куски
+MAX_BELOW_SPEECH_DB = SETTINGS["max_below_speech_db"]  # всё, что настолько тише речи, не считаем речью
+PAD_START = SETTINGS["pad_start"]  # запас, чтобы не срезать тихое начало слова
+PAD_END = SETTINGS["pad_end"]
+THRESHOLD_POSITION = SETTINGS["threshold_position"]  # порог между шумом (0) и громкой речью (1)
 
 
 def load_mono(audio_path):
@@ -73,16 +76,16 @@ def refine_word(word, voiced, levels):
     start = word.setdefault("raw_start", word["start"])
     end = word.setdefault("raw_end", word["end"])
 
-    first_frame = int(start / FRAME_SECONDS)
+    first_frame = max(0, int(start / FRAME_SECONDS))  # Whisper бывает отдаёт начало меньше нуля
     found = np.flatnonzero(voiced[first_frame:int(np.ceil(end / FRAME_SECONDS))])
     if found.size == 0:
-        word["start"], word["end"] = start, end
+        word["start"], word["end"] = max(0.0, start), end
         return
 
     run_start, run_end = loudest_run(found + first_frame, levels)
     voice_start = run_start * FRAME_SECONDS
     voice_end = (run_end + 1) * FRAME_SECONDS
-    word["start"] = round(max(start, voice_start - PAD_START), 3)
+    word["start"] = round(max(start, 0.0, voice_start - PAD_START), 3)
     word["end"] = round(min(end, voice_end + PAD_END), 3)
 
 
