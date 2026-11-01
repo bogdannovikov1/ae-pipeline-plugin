@@ -21,7 +21,11 @@
     "autosave_projects": [
       "~/Documents/Projects/Videos/copy_*",
       "~/Documents/Projects/Videos/test_*"
-    ]
+    ],
+    "launch_timeout": 240,
+    "review_width": 1920,
+    "review_height": 1080,
+    "review_fps": 30
   },
   "review": {
     "max_rounds": 3,

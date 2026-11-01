@@ -29,6 +29,8 @@ python3 plugin/scripts/settings.py show --video <папка видео>
 | `refine.threshold_position` | Порог между шумом (0) и речью (1) |
 | `ae.app` | Имя приложения After Effects |
 | `ae.timeout` | Предел выполнения скрипта в AE, с |
+| `ae.launch_timeout` | Ожидание запуска After Effects, с |
+| `ae.review_width`, `ae.review_height`, `ae.review_fps` | Композиция ревью; fps берётся из транскрипта, если он там есть |
 | `ae.autosave_projects` | Папки, где проект можно сохранять без вопроса |
 | `review.max_rounds` | Максимум кругов предревью без автора |
 | `review.block_on` | С какой серьёзности находка запускает исправление: `minor`, `major`, `critical`; `none` только отчёт |

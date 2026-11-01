@@ -21,7 +21,7 @@
 
 | Этап | Исполнитель | Результат | Ревью |
 |---|---|---|---|
-| `transcript` | `transcriber` | `<f>.timeline.json`, `<f>.notes.md` | автор в AE, затем заморозка |
+| `transcript` | `transcriber` | `<f>.timeline.json`, `<f>.notes.md`, `<f>.aep` | агент спрашивает и открывает AE с маркерами, автор правит, затем заморозка |
 | `plan` | `make`, позже `director` | `<f>.animation.json` | автор в чате |
 | `build` | `animator` | `<f>.scene.json`, композиция | сразу к предревью |
 | `preflight` | `reviewer` и `animator` | `reviews/round_N.json` | до `review.max_rounds` кругов без автора |
@@ -65,6 +65,7 @@ plugin/                           то, что устанавливается
 - Поле `i` в `words` — контракт между этапами: его нельзя менять без пересчёта ссылок. При изменении формата увеличивай версию и правь `docs/formats.md`.
 - Изменение этапов вносится вместе в `pipeline.json`, навык `make`, `CLAUDE.md` и `PLAN.md`.
 - Инструкции плагина ссылаются на файлы через `${CLAUDE_PLUGIN_ROOT}`. Личных путей в них нет.
+- After Effects запускается только с согласия автора: `ae_run.py` без `--launch` его не стартует.
 - ExtendScript это ES3: без `JSON`, `let`, стрелочных функций. JSX запускаем через `ae_run.py`.
 - Слои-фигуры не вращаем в 3D, родителя задаём до позиции. Подробности монтажа живут в `craft.md` базы.
 - Перед коммитом: `python3 tests/test_pipeline.py` и `claude plugin validate ./plugin`.

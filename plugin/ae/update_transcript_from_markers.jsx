@@ -155,22 +155,38 @@
         return false;
     }
 
+    // Automation names the composition and gets errors thrown instead of dialogs.
+    var quietComp = $.global.REVIEW_COMP;
+
+    function tell(message) {
+        if (!quietComp) {
+            alert(message, SCRIPT_NAME);
+        }
+    }
+
+    function refuse(message) {
+        if (quietComp) {
+            throw new Error(message);
+        }
+        alert(message, SCRIPT_NAME);
+    }
+
     function main() {
-        var comp = app.project.activeItem;
+        var comp = quietComp ? Timeline.findComp(quietComp) : app.project.activeItem;
         if (!(comp instanceof CompItem)) {
-            alert("Open a composition with an audio layer.", SCRIPT_NAME);
+            refuse("Open a composition with an audio layer.");
             return;
         }
 
         var layer = Timeline.findAudioLayer(comp);
         if (!layer) {
-            alert("Select one audio layer: the target layer is ambiguous.", SCRIPT_NAME);
+            refuse("Select one audio layer: the target layer is ambiguous.");
             return;
         }
 
         var items = collectMarkers(layer);
         if (!hasWordNumbers(items)) {
-            alert("These markers have no word numbers. Run add_word_markers.jsx first, then review.", SCRIPT_NAME);
+            refuse("These markers have no word numbers. Run add_word_markers.jsx first, then review.");
             return;
         }
 
@@ -181,20 +197,23 @@
 
         var data = Timeline.readJson(file);
         if (data.status === "approved") {
-            alert("This transcript is approved. Reopen it first: approve_transcript.py --reopen", SCRIPT_NAME);
+            refuse("This transcript is approved. Reopen it first: approve_transcript.py --reopen");
             return;
         }
         var stats = applyMarkers(data, items, comp.frameDuration);
 
         Timeline.writeJson(file, data, file.fsName.replace(/\.json$/, ".backup.json"));
 
-        alert("Done. Words: " + data.words.length + ", changed: " + stats.changed +
-            ", added: " + stats.added + ", removed: " + stats.removed, SCRIPT_NAME);
+        tell("Done. Words: " + data.words.length + ", changed: " + stats.changed +
+            ", added: " + stats.added + ", removed: " + stats.removed);
     }
 
     try {
         main();
     } catch (e) {
+        if (quietComp) {
+            throw e;
+        }
         alert("Error: " + e.toString() + " (line " + e.line + ")", SCRIPT_NAME);
     }
 })();

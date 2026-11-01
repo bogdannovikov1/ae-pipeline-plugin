@@ -97,11 +97,40 @@ var Timeline = (function () {
         return File.openDialog("Select a .timeline.json file", "*.json");
     }
 
+    function addWordMarkers(layer, words) {
+        var markers = layer.property("ADBE Marker");
+        for (var k = markers.numKeys; k >= 1; k--) {
+            markers.removeKey(k);
+        }
+        for (var i = 0; i < words.length; i++) {
+            var word = words[i];
+            var marker = new MarkerValue(word.word);
+            marker.duration = word.end - word.start;
+            marker.setParameters({ i: String(word.i) });
+            if (word.needs_review) {
+                marker.label = REVIEW_LABEL;
+            }
+            markers.setValueAtTime(layer.startTime + word.start, marker);
+        }
+    }
+
+    function findComp(name) {
+        for (var i = 1; i <= app.project.numItems; i++) {
+            var item = app.project.item(i);
+            if (item instanceof CompItem && item.name === name) {
+                return item;
+            }
+        }
+        throw new Error("Composition not found: " + name);
+    }
+
     return {
         REVIEW_LABEL: REVIEW_LABEL,
         readJson: readJson,
         writeJson: writeJson,
         findAudioLayer: findAudioLayer,
+        addWordMarkers: addWordMarkers,
+        findComp: findComp,
         findTimelineFile: findTimelineFile
     };
 })();

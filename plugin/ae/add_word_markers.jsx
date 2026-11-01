@@ -35,19 +35,7 @@
 
         app.beginUndoGroup(SCRIPT_NAME);
         try {
-            for (var k = markers.numKeys; k >= 1; k--) {
-                markers.removeKey(k);
-            }
-            for (var i = 0; i < words.length; i++) {
-                var word = words[i];
-                var marker = new MarkerValue(word.word);
-                marker.duration = word.end - word.start;
-                marker.setParameters({ i: String(word.i) });
-                if (word.needs_review) {
-                    marker.label = Timeline.REVIEW_LABEL;
-                }
-                markers.setValueAtTime(layer.startTime + word.start, marker);
-            }
+            Timeline.addWordMarkers(layer, words);
         } finally {
             app.endUndoGroup();
         }
