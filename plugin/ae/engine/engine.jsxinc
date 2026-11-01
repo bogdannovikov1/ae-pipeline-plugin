@@ -281,7 +281,7 @@ $.global.Engine = (function () {
         return E.tokens.sounds[name];
     }
 
-    // A sound lands on the last moment of the animation: it ends with it, or a hair later.
+    // A sound sits in the middle of the animation: their centres meet, whichever is longer.
     // length is how long the animation runs from t. A block may name its sound; false in params turns it off.
     E.sound = function (params, name, t, length) {
         var span = length === undefined ? E.tokens.motion.pop_duration : length;
@@ -289,10 +289,10 @@ $.global.Engine = (function () {
         if (!id) {
             return [];
         }
-        var animationEnd = t + span;
         var layer = E.comp.layers.add(E.asset(id));
         var audible = audibleLength(id, layer);
-        var start = Math.max(0, animationEnd + (E.tokens.sounds.tail || 0) - audible);
+        var middle = t + span / 2;
+        var start = Math.max(0, middle - audible / 2);
         layer.startTime = start;
         layer.audio.audioLevels.setValue([E.tokens.sounds.level, E.tokens.sounds.level]);
         E.soundLog.push({
@@ -301,7 +301,8 @@ $.global.Engine = (function () {
             event: name,
             start: Math.round(start * 1000) / 1000,
             end: Math.round((start + audible) * 1000) / 1000,
-            animation_end: Math.round(animationEnd * 1000) / 1000
+            animation_start: Math.round(t * 1000) / 1000,
+            animation_end: Math.round((t + span) * 1000) / 1000
         });
         return [layer];
     };

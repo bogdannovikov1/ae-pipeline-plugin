@@ -123,17 +123,18 @@ def sound_log_path(scene):
 
 
 def sound_warnings(sounds, timing):
-    """Звук должен заканчиваться вместе с анимацией или чуть позже, а события не звучать подряд."""
+    """Середина звука должна совпадать с серединой анимации, а события не звучать подряд."""
     warnings = []
+    centre = lambda sound: (sound["start"] + sound["end"]) / 2
     for sound in sounds:
-        late = sound["end"] - sound["animation_end"]
-        if late < -0.01:
-            warnings.append(f"{sound['item']}: {sound['sound']} кончается раньше анимации на {-late:.2f} с")
-        elif late > timing["sound_max_tail"]:
-            warnings.append(f"{sound['item']}: {sound['sound']} кончается позже анимации на {late:.2f} с")
-    ordered = sorted(sounds, key=lambda sound: sound["end"])
+        shift = centre(sound) - (sound["animation_start"] + sound["animation_end"]) / 2
+        # В начале ролика звук нельзя сдвинуть левее нуля.
+        if abs(shift) > timing["sound_max_shift"] and sound["start"] > 0:
+            side = "позже" if shift > 0 else "раньше"
+            warnings.append(f"{sound['item']}: {sound['sound']} {side} середины анимации на {abs(shift):.2f} с")
+    ordered = sorted(sounds, key=centre)
     for first, second in zip(ordered, ordered[1:]):
-        gap = second["end"] - first["end"]
+        gap = centre(second) - centre(first)
         if gap < timing["sound_min_gap"]:
             warnings.append(f"{first['item']} и {second['item']}: звуки подряд, разрыв {gap:.2f} с, отключите один: sound false")
     return warnings

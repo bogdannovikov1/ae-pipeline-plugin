@@ -45,5 +45,5 @@ python3 plugin/scripts/settings.py show --video <папка видео>
 | `timing.max_early` | Насколько раньше слова может стартовать анимация, с |
 | `timing.long_phrase_words`, `timing.long_phrase_seconds` | С какой длины фраза считается длинной |
 | `timing.long_phrase_zone` | Доля фразы, после которой начинается зона опоры: 0,5 значит вторая половина |
-| `timing.sound_max_tail` | На сколько звук может пережить анимацию, с |
-| `timing.sound_min_gap` | Минимальный разрыв между концами звуков, с |
+| `timing.sound_max_shift` | Допустимое отклонение середины звука от середины анимации, с |
+| `timing.sound_min_gap` | Минимальный разрыв между серединами звуков, с |

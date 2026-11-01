@@ -466,27 +466,31 @@ class Starter(Case):
 
     def test_starter_is_complete_and_has_no_sounds(self):
         tokens = json.loads((STARTER / "tokens.json").read_text())
-        self.assertEqual({k: v for k, v in tokens["sounds"].items() if k not in ("level", "tail") and v}, {})
+        self.assertEqual({k: v for k, v in tokens["sounds"].items() if k != "level" and v}, {})
         for block in (STARTER / "blocks").iterdir():
             self.assertTrue((block / "block.jsxinc").is_file(), block.name)
             self.assertTrue((block / "block.json").is_file(), block.name)
 
 
 class Sounds(Case):
-    timing = {"sound_max_tail": 0.12, "sound_min_gap": 0.3}
+    timing = {"sound_max_shift": 0.03, "sound_min_gap": 0.3}
 
-    def sound(self, item, end, animation_end):
-        return {"item": item, "sound": "pop", "end": end, "animation_end": animation_end}
+    def sound(self, item, start, end, animation_start, animation_end):
+        return {"item": item, "sound": "pop", "start": start, "end": end,
+                "animation_start": animation_start, "animation_end": animation_end}
 
-    def test_good_sound_passes(self):
-        self.assertEqual(sound_warnings([self.sound("a", 1.05, 1.0)], self.timing), [])
+    def test_centred_sound_passes(self):
+        self.assertEqual(sound_warnings([self.sound("a", 1.4, 1.6, 1.0, 2.0)], self.timing), [])
 
-    def test_ends_too_early_or_late(self):
-        self.assertIn("раньше", sound_warnings([self.sound("a", 0.8, 1.0)], self.timing)[0])
-        self.assertIn("позже", sound_warnings([self.sound("a", 1.4, 1.0)], self.timing)[0])
+    def test_off_centre(self):
+        self.assertIn("раньше", sound_warnings([self.sound("a", 1.0, 1.2, 1.0, 2.0)], self.timing)[0])
+        self.assertIn("позже", sound_warnings([self.sound("a", 1.8, 2.0, 1.0, 2.0)], self.timing)[0])
+
+    def test_clamped_at_video_start_passes(self):
+        self.assertEqual(sound_warnings([self.sound("a", 0, 0.4, 0, 0.1)], self.timing), [])
 
     def test_sounds_in_a_row(self):
-        sounds = [self.sound("a", 1.0, 1.0), self.sound("b", 1.1, 1.1)]
+        sounds = [self.sound("a", 1.0, 1.2, 1.0, 1.2), self.sound("b", 1.1, 1.3, 1.1, 1.3)]
         self.assertIn("подряд", sound_warnings(sounds, self.timing)[0])
 
     def test_trailing_silence(self):

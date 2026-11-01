@@ -50,7 +50,7 @@
     "long_phrase_words": 7,
     "long_phrase_seconds": 2.5,
     "long_phrase_zone": 0.5,
-    "sound_max_tail": 0.12,
-    "sound_min_gap": 0.3
+    "sound_min_gap": 0.3,
+    "sound_max_shift": 0.03
   }
 }
