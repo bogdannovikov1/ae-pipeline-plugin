@@ -16,6 +16,9 @@ from approve_transcript import transcript_hash
 from settings import bases_dir, settings_for
 
 
+ENGINE_VERSION = 2  # растёт, когда блоки базы перестают работать на старом движке
+
+
 def file_hash(path):
     digest = hashlib.sha256()
     with open(path, "rb") as file:
@@ -124,6 +127,10 @@ def check_scene(path, settings=None):
     base = resolve_base(scene["base"], settings)
     if not (base / "tokens.json").is_file():
         errors.append(f"база не найдена: {base}")
+    else:
+        needed = read_json(base / "base.json").get("engine", 1) if (base / "base.json").is_file() else 1
+        if needed != ENGINE_VERSION:
+            errors.append(f"база рассчитана на движок {needed}, а плагин содержит движок {ENGINE_VERSION}: обновите плагин или базу")
     if not resolve_path(scene["audio"], folder).is_file():
         errors.append(f"аудио не найдено: {scene['audio']}")
     timeline = resolve_path(scene["timeline"], folder)

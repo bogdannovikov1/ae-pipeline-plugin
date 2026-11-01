@@ -14,9 +14,9 @@ from extend_timeline import merge as merge_part
 from pipeline import Fragment, PipelineError
 from settings import find_video, load_settings, merge
 from sound_measure import trailing_start
-from view import sound_log_path, sound_warnings, review_lines, scene_lines, text_lines, timing_warnings
+from view import layout_warnings, sound_log_path, sound_warnings, review_lines, scene_lines, text_lines, timing_warnings
 from setup_base import STARTER, create_base
-from validate import check_built, file_hash
+from validate import ENGINE_VERSION, check_built, file_hash
 from validate import check_animation, check_scene, check_timeline
 
 
@@ -40,6 +40,7 @@ class Case(unittest.TestCase):
         block.mkdir(parents=True)
         (block / "block.jsxinc").write_text("")
         (self.bases / "b" / "tokens.json").write_text("{}")
+        (self.bases / "b" / "base.json").write_text(json.dumps({"engine": ENGINE_VERSION}))
         self.settings = merge(load_settings(user_path=self.root / "none"), {"bases_dir": str(self.bases), "base": "b"})
         self.write("F1.wav", "audio")
 
@@ -154,6 +155,12 @@ class Validate(Case):
         items = [{"block": "label", "at_word": 99}, {"block": "нет", "at_word": 1}, {"block": "label", "after": "x"}]
         errors = check_scene(self.write("s.json", self.scene(items=items)), self.settings)
         self.assertEqual(len(errors), 3)
+
+    def test_scene_old_engine(self):
+        self.write("F1.timeline.json", timeline())
+        (self.bases / "b" / "base.json").write_text(json.dumps({"engine": 1}))
+        errors = check_scene(self.write("s.json", self.scene()), self.settings)
+        self.assertIn("движок", errors[0])
 
     def test_scene_old_transcript(self):
         self.write("F1.timeline.json", timeline())
@@ -542,14 +549,50 @@ class Sounds(Case):
 
 class Moments(Case):
     def test_order_offsets_and_limit(self):
-        scene = {"items": [{"always": True}, {"id": "a", "at_word": 1}, {"after": "a", "delay": 0.2}, {"at": 5}]}
-        words = [{"start": 0}, {"start": 1.0}]
-        times = moments(scene, words, 0.1, [0, 0.25], 100, 10)
+        starts = [0.9, 1.1, 5]
+        times = moments(starts, [0, 0.25], 100, 10)
         self.assertEqual(times[0], 0.9)
-        self.assertIn(1.1, times)
-        self.assertEqual(len(moments(scene, words, 0.1, [0, 0.25], 3, 10)), 3)
-        self.assertEqual(max(moments(scene, words, 0.1, [0, 0.25], 100, 5.1)), 5.1)
-        self.assertEqual(moments(scene, words, 0.1, [0], 100, 10, from_time=4), [5])
+        self.assertIn(1.15, times)
+        self.assertEqual(len(moments(starts, [0, 0.25], 3, 10)), 3)
+        self.assertEqual(max(moments(starts, [0, 0.25], 100, 5.1)), 5.1)
+        self.assertEqual(moments(starts, [0], 100, 10, from_time=4), [5])
+
+
+class Layout(Case):
+    cfg = {"safe_margin": 96, "min_overlap": 8, "full_frame": 0.9}
+
+    def box(self, item, left, top, right, bottom, text=True, time=1, until=5, opacity=100):
+        return {"item": item, "layer": item, "text": text, "time": time, "until": until,
+                "opacity": opacity, "left": left, "top": top, "right": right, "bottom": bottom}
+
+    def warnings(self, *boxes):
+        return layout_warnings({"width": 1920, "height": 1080, "boxes": list(boxes)}, self.cfg)
+
+    def test_good_layout_passes(self):
+        self.assertEqual(self.warnings(self.box("a", 200, 200, 500, 300), self.box("b", 600, 200, 900, 300)), [])
+
+    def test_outside_safe_field(self):
+        self.assertIn("безопасного поля", self.warnings(self.box("a", 20, 200, 500, 300))[0])
+
+    def test_full_frame_layer_ignored(self):
+        self.assertEqual(self.warnings(self.box("bg", 0, 0, 1920, 1080, text=False)), [])
+
+    def test_text_overlap(self):
+        result = self.warnings(self.box("a", 200, 200, 500, 300), self.box("b", 400, 250, 700, 350))
+        self.assertIn("перекрывает", result[0])
+
+    def test_layers_of_same_item_and_other_time_do_not_clash(self):
+        same = [self.box("a", 200, 200, 500, 300), self.box("a", 200, 200, 500, 300)]
+        self.assertEqual(self.warnings(*same), [])
+        later = self.box("b", 200, 200, 500, 300, time=9, until=12)
+        self.assertEqual(self.warnings(self.box("a", 200, 200, 500, 300), later), [])
+
+    def test_shape_under_text_is_fine(self):
+        boxes = [self.box("a", 200, 200, 500, 300), self.box("b", 200, 200, 500, 300, text=False)]
+        self.assertEqual(self.warnings(*boxes), [])
+
+    def test_hidden_layer_ignored(self):
+        self.assertEqual(self.warnings(self.box("a", 20, 200, 500, 300, opacity=0)), [])
 
 
 class OptionalPreflight(Case):

@@ -7,5 +7,6 @@
   "blocks": "blocks",
   "assets": "assets/assets.json",
   "references": "references",
-  "craft": "craft.md"
+  "craft": "craft.md",
+  "engine": 2
 }

@@ -52,5 +52,11 @@
     "long_phrase_zone": 0.5,
     "sound_min_gap": 0.3,
     "sound_max_shift": 0.03
+  },
+  "layout": {
+    "safe_margin": 96,
+    "min_overlap": 8,
+    "full_frame": 0.9,
+    "settle": 0.8
   }
 }

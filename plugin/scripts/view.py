@@ -7,6 +7,7 @@
     python3 view.py scene F1.scene.json
     python3 view.py timing F1.scene.json
     python3 view.py sounds F1.scene.json
+    python3 view.py layout F1.scene.json
     python3 view.py hash F1.timeline.json
 """
 import argparse
@@ -122,6 +123,10 @@ def sound_log_path(scene):
     return scene.with_name(re.sub(r"(\.scene)?\.json$", ".sounds.json", scene.name))
 
 
+def layout_path(scene):
+    return scene.with_name(re.sub(r"(\.scene)?\.json$", ".layout.json", scene.name))
+
+
 def sound_warnings(sounds, timing):
     """Середина звука должна совпадать с серединой анимации, а события не звучать подряд."""
     warnings = []
@@ -140,9 +145,38 @@ def sound_warnings(sounds, timing):
     return warnings
 
 
+def layout_warnings(layout, cfg):
+    """Находит выход за безопасное поле и наложение текста на текст. Большой JSON читает скрипт, агент видит итог."""
+    width, height = layout["width"], layout["height"]
+    margin = cfg["safe_margin"]
+    visible = [box for box in layout["boxes"] if box["opacity"] > 0]
+    objects = [
+        box for box in visible
+        if box["right"] - box["left"] < width * cfg["full_frame"] or box["bottom"] - box["top"] < height * cfg["full_frame"]
+    ]
+    warnings = []
+    reported = set()
+    for box in objects:
+        outside = box["left"] < margin or box["top"] < margin or box["right"] > width - margin or box["bottom"] > height - margin
+        if outside and box["item"] not in reported:
+            reported.add(box["item"])
+            warnings.append(f"{box['item']}: {box['layer']} вне безопасного поля на {box['time']:.2f} с")
+    texts = [box for box in objects if box["text"]]
+    for index, first in enumerate(texts):
+        for second in texts[index + 1:]:
+            together = max(first["time"], second["time"]) < min(first["until"], second["until"])
+            wide = min(first["right"], second["right"]) - max(first["left"], second["left"])
+            tall = min(first["bottom"], second["bottom"]) - max(first["top"], second["top"])
+            pair = tuple(sorted((first["item"], second["item"])))
+            if together and first["item"] != second["item"] and min(wide, tall) >= cfg["min_overlap"] and pair not in reported:
+                reported.add(pair)
+                warnings.append(f"{first['item']}: текст перекрывает {second['item']} на {max(first['time'], second['time']):.2f} с")
+    return warnings
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("command", choices=["text", "scene", "timing", "sounds", "hash"])
+    parser.add_argument("command", choices=["text", "scene", "timing", "sounds", "layout", "hash"])
     parser.add_argument("path", type=Path)
     parser.add_argument("--from-word", type=int, default=0)
     parser.add_argument("--to-word", type=int)
@@ -156,6 +190,10 @@ def main():
     elif args.command == "text":
         data = read_json(args.path)
         lines = review_lines(data) if args.review else text_lines(data, timing, args.from_word, args.to_word)
+    elif args.command == "layout":
+        path = args.path.resolve()
+        data = read_json(layout_path(path))
+        lines = layout_warnings(data, settings["layout"]) or ["Раскладка в норме"]
     elif args.command == "sounds":
         log = sound_log_path(args.path.resolve())
         if not log.is_file():

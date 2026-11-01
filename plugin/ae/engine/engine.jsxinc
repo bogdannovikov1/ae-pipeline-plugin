@@ -252,7 +252,7 @@ $.global.Engine = (function () {
         for (var i = 0; i < E.assets.length; i++) {
             if (E.assets[i].id === id) {
                 var file = new File(E.base + "/assets/" + E.assets[i].file);
-                E.footage[id] = app.project.importFile(new ImportOptions(file));
+                E.footage[id] = Timeline.importOnce(file);
                 return E.footage[id];
             }
         }

@@ -124,6 +124,34 @@ var Timeline = (function () {
         throw new Error("Composition not found: " + name);
     }
 
+    // Rebuilds get the suffix _2, _3: the newest item with the base name is the current one.
+    function findLatestComp(name) {
+        var found = null;
+        for (var i = 1; i <= app.project.numItems; i++) {
+            var item = app.project.item(i);
+            if (item instanceof CompItem && (item.name === name || /^_\d+$/.test(item.name.substr(name.length)) && item.name.indexOf(name) === 0)) {
+                if (!found || item.id > found.id) {
+                    found = item;
+                }
+            }
+        }
+        if (!found) {
+            throw new Error("Composition not found: " + name);
+        }
+        return found;
+    }
+
+    // Every rebuild would otherwise import the same files again and bloat the project.
+    function importOnce(file) {
+        for (var i = 1; i <= app.project.numItems; i++) {
+            var item = app.project.item(i);
+            if (item instanceof FootageItem && item.file && item.file.fsName === file.fsName) {
+                return item;
+            }
+        }
+        return app.project.importFile(new ImportOptions(file));
+    }
+
     return {
         REVIEW_LABEL: REVIEW_LABEL,
         readJson: readJson,
@@ -131,6 +159,8 @@ var Timeline = (function () {
         findAudioLayer: findAudioLayer,
         addWordMarkers: addWordMarkers,
         findComp: findComp,
+        findLatestComp: findLatestComp,
+        importOnce: importOnce,
         findTimelineFile: findTimelineFile
     };
 })();

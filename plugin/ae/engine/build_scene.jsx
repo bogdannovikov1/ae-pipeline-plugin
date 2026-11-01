@@ -6,6 +6,7 @@
 
 (function () {
     var SCRIPT_NAME = "Build Scene";
+    var OLD_BUILDS = "old builds";
     var folder = new File($.fileName).parent.fsName;
     var quiet = !!$.global.SCENE_PATH;
 
@@ -102,7 +103,7 @@
     }
 
     function addVoice(part, number, lastWord) {
-        var voice = Engine.comp.layers.add(app.project.importFile(new ImportOptions(new File(part.audio))));
+        var voice = Engine.comp.layers.add(Timeline.importOnce(new File(part.audio)));
         voice.name = number === 0 ? "voice" : "voice_" + (number + 1);
         voice.startTime = part.at;
         var words = Engine.timeline.words;
@@ -153,23 +154,6 @@
         return result;
     }
 
-    // Rebuilds get the suffix _2, _3: the newest item with the base name is the current one.
-    function findComp(name) {
-        var found = null;
-        for (var i = 1; i <= app.project.numItems; i++) {
-            var item = app.project.item(i);
-            if (item instanceof CompItem && (item.name === name || item.name.indexOf(name + "_") === 0)) {
-                if (!found || item.id > found.id) {
-                    found = item;
-                }
-            }
-        }
-        if (!found) {
-            throw new Error("Composition to extend not found: " + name);
-        }
-        return found;
-    }
-
     // Layers that reached the end keep going, and the camera push stretches to the new end.
     function lengthen(comp, duration) {
         var old = comp.duration;
@@ -192,7 +176,7 @@
     // Keeps a finished composition with its manual edits and adds only the new items.
     function append(scene, from) {
         var words = Engine.timeline.words;
-        Engine.comp = findComp(scene.comp.name);
+        Engine.comp = Timeline.findLatestComp(scene.comp.name);
         lengthen(Engine.comp, words[words.length - 1].end + scene.tail);
         addVoices(scene);
         for (var n = 0; n < from; n++) {
@@ -205,8 +189,27 @@
         Engine.comp.openInViewer();
     }
 
+    // Earlier builds stay in the project but out of the way.
+    function archiveBuilds(name) {
+        var folder = null;
+        for (var i = 1; i <= app.project.numItems; i++) {
+            var item = app.project.item(i);
+            if (item instanceof FolderItem && item.name === OLD_BUILDS) {
+                folder = item;
+            }
+        }
+        for (var n = app.project.numItems; n >= 1; n--) {
+            var old = app.project.item(n);
+            if (old instanceof CompItem && (old.name === name || /^_\d+$/.test(old.name.substr(name.length)) && old.name.indexOf(name) === 0)) {
+                folder = folder || app.project.items.addFolder(OLD_BUILDS);
+                old.parentFolder = folder;
+            }
+        }
+    }
+
     function build(scene) {
         var c = scene.comp;
+        archiveBuilds(c.name);
         var words = Engine.timeline.words;
         var duration = words[words.length - 1].end + scene.tail;
         Engine.comp = app.project.items.addComp(freeName(c.name), c.width, c.height, 1, duration, Engine.tokens.motion.fps);
@@ -216,6 +219,16 @@
         }
         addCamera();
         Engine.comp.openInViewer();
+    }
+
+    // What was built, for the Python tools: an appended part keeps the sounds of the earlier ones.
+    function writeJournal(scenePath, keep) {
+        var file = new File(scenePath.replace(/(\.scene)?\.json$/, ".sounds.json"));
+        var sounds = Engine.soundLog;
+        if (keep && file.exists) {
+            sounds = Timeline.readJson(file).sounds.concat(sounds);
+        }
+        Timeline.writeJson(file, { sounds: sounds, starts: Engine.starts });
     }
 
     function main() {
@@ -229,17 +242,18 @@
         }
         $.evalFile(new File(folder + "/engine.jsxinc"));
         var scene = prepare(path);
+        var appendFrom = $.global.APPEND_FROM;
         app.beginUndoGroup(SCRIPT_NAME);
         try {
-            if ($.global.APPEND_FROM !== undefined) {
-                append(scene, parseInt($.global.APPEND_FROM, 10));
+            if (appendFrom !== undefined) {
+                append(scene, parseInt(appendFrom, 10));
             } else {
                 build(scene);
             }
         } finally {
             app.endUndoGroup();
         }
-        Timeline.writeJson(new File(path.replace(/(\.scene)?\.json$/, ".sounds.json")), { sounds: Engine.soundLog });
+        writeJournal(path, appendFrom !== undefined);
         if (!quiet) {
             alert("Done: " + Engine.comp.name + ". Items: " + scene.items.length, SCRIPT_NAME);
         }

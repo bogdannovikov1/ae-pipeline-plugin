@@ -13,35 +13,15 @@ from pathlib import Path
 
 from ae_run import run_jsx
 from settings import PLUGIN_ROOT, load_settings, settings_for
-from validate import read_json, resolve_base, resolve_path
+from validate import read_json, resolve_path
+from view import sound_log_path
 
 CAPTURE_SCRIPT = PLUGIN_ROOT / "ae" / "capture_frames.jsx"
 
 
-def item_start(item, words, starts, lead):
-    """Повторяет Engine.time из engine.jsxinc: где элемент начинается."""
-    delay = item.get("delay", 0)
-    if "at_word" in item:
-        return max(0, words[item["at_word"]]["start"] - lead + delay)
-    if "after" in item:
-        return starts.get(item["after"], 0) + delay
-    if "at" in item:
-        return item["at"] + delay
-    return None
-
-
-def moments(scene, words, lead, offsets, limit, duration, from_time=0):
+def moments(starts, offsets, limit, duration, from_time=0):
     """Возвращает моменты съёмки вокруг начала элементов, равномерно прореженные до лимита."""
-    times = set()
-    starts = {}
-    for number, item in enumerate(scene["items"]):
-        if item.get("always"):
-            continue
-        start = item_start(item, words, starts, lead)
-        if start is None:
-            continue
-        starts[item.get("id") or f"{item.get('block')}_{number}"] = start
-        times.update(round(min(duration, max(0, start + offset)), 3) for offset in offsets)
+    times = {round(min(duration, max(0, start + offset)), 3) for start in starts for offset in offsets}
     ordered = sorted(t for t in times if t >= from_time)
     if len(ordered) <= limit:
         return ordered
@@ -88,9 +68,11 @@ def main():
     scene_path = args.scene.resolve()
     scene = read_json(scene_path)
     words = read_json(resolve_path(scene["timeline"], scene_path.parent))["words"]
-    tokens = read_json(resolve_base(scene["base"], settings) / "tokens.json")
-    lead = scene.get("tokens", {}).get("motion", {}).get("lead", tokens["motion"]["lead"])
-    times = moments(scene, words, lead, review["offsets"], review["max_frames"], words[-1]["end"] + scene["tail"], args.from_time)
+    journal = sound_log_path(scene_path)
+    if not journal.is_file():
+        sys.exit(f"Нет журнала сборки {journal}: сначала соберите сцену")
+    starts = [t for name, t in read_json(journal)["starts"].items() if t > 0]
+    times = moments(starts, review["offsets"], review["max_frames"], words[-1]["end"] + scene["tail"], args.from_time)
 
     folder = scene_path.parent / "frames" / (args.label or f"round_{args.round}")
     folder.mkdir(parents=True, exist_ok=True)

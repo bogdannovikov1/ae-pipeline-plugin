@@ -10,7 +10,8 @@ state.json              состояние этапов
 <f>.animation.json      план анимации
 <f>.scene.json          сцена для движка
 blocks/<id>/            блоки этого видео, главнее блоков базы
-<f>.sounds.json         журнал звуков последней сборки
+<f>.sounds.json         журнал сборки: звуки и начала элементов
+<f>.layout.json         положение слоёв из AE, большой файл только для view.py
 <f>.build.json          отметка успешной сборки с хэшем сцены
 reviews/round_N.json    отчёты предревью
 reviews/manual_N.json   отчёты разового ревью
@@ -62,7 +63,7 @@ frames/round_N/         кадры, листы и index.json
 
 ## sounds.json
 
-Журнал звуков последней сборки: `{ "sounds": [{ "item", "sound", "event", "start", "end", "animation_start", "animation_end" }] }`. Его проверяет `view.py sounds`.
+Журнал сборки: `{ "sounds": [{ "item", "sound", "event", "start", "end", "animation_start", "animation_end" }], "starts": { "<id элемента>": секунды } }`. Звуки проверяет `view.py sounds`, по `starts` снимает кадры `capture.py`.
 
 ## state.json
 

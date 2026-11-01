@@ -18,11 +18,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from settings import PLUGIN_ROOT, bases_dir, load_settings, settings_for
-from validate import build_stamp_path, file_hash
+from validate import build_stamp_path, file_hash, read_json
+from view import layout_path, sound_log_path
 
 BUILD_SCRIPT = PLUGIN_ROOT / "ae" / "engine" / "build_scene.jsx"
 REVIEW_SCRIPT = PLUGIN_ROOT / "ae" / "open_review.jsx"
 APPLY_SCRIPT = PLUGIN_ROOT / "ae" / "update_transcript_from_markers.jsx"
+LAYOUT_SCRIPT = PLUGIN_ROOT / "ae" / "export_layout.jsx"
 OPEN_SCRIPT = PLUGIN_ROOT / "ae" / "open_project.jsx"
 READY_CHECK_TIMEOUT = 20
 READY_CHECK_PAUSE = 3
@@ -114,9 +116,25 @@ def run_jsx(script, globals_, settings, extra_autosave=()):
     return outcome
 
 
+def export_layout(scene_path, settings):
+    """Выгружает положение слоёв из AE. Результат читает view.py layout."""
+    scene = read_json(scene_path)
+    journal = read_json(sound_log_path(scene_path))
+    spec = {
+        "comp": scene["comp"]["name"],
+        "out": str(layout_path(scene_path)),
+        "settle": settings["layout"]["settle"],
+        "starts": journal["starts"],
+    }
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as file:
+        json.dump(spec, file)
+    run_jsx(LAYOUT_SCRIPT, {"LAYOUT_SPEC": file.name}, settings)
+    Path(file.name).unlink()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("command", choices=["build", "script", "review", "apply-review", "open"])
+    parser.add_argument("command", choices=["build", "script", "review", "apply-review", "open", "layout"])
     parser.add_argument("path", type=Path, help="сцена, JSX, запись или проект, по команде")
     parser.add_argument("--launch", action="store_true", help="автор разрешил запустить After Effects")
     parser.add_argument("--append-from", type=int, help="для build: дополнить композицию элементами с этого номера")
@@ -132,6 +150,8 @@ def main():
             run_jsx(BUILD_SCRIPT, values, settings)
             stamp = {"scene_hash": file_hash(args.path), "built_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
             build_stamp_path(args.path).write_text(json.dumps(stamp, indent=2), encoding="utf-8")
+        elif args.command == "layout":
+            export_layout(args.path.resolve(), settings)
         elif args.command == "review":
             launch(settings, args.launch)
             ae = settings["ae"]
