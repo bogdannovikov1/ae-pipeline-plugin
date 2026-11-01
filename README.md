@@ -50,4 +50,6 @@ claude --plugin-dir ./plugin
 
 ## Лицензии
 
+Часть правил движения в основах монтажа пересказана и адаптирована для видео по материалам `emilkowalski/skills` (MIT).
+
 Навык `plugin/skills/after-effects` взят из `aedev-tools/adobe-agent-skills`, Apache-2.0, текст лицензии лежит рядом с ним.
