@@ -133,6 +133,12 @@
     // A slow push-in gives depth: the 2D background stays, objects drift against it.
     function addCamera() {
         var comp = Engine.comp;
+        // A camera block already directs this scene: the default push would fight it.
+        for (var n = 1; n <= comp.numLayers; n++) {
+            if (comp.layer(n) instanceof CameraLayer) {
+                return;
+            }
+        }
         var camera = comp.layers.addCamera("camera", [comp.width / 2, comp.height / 2]);
         var z = -camera.cameraOption.zoom.value;
         var near = z * Engine.tokens.motion.camera_push;
@@ -164,7 +170,7 @@
             if ((layer.hasVideo || layer instanceof CameraLayer) && layer.outPoint >= old - frame) {
                 layer.outPoint = duration;
             }
-            if (layer instanceof CameraLayer && layer.position.numKeys > 1) {
+            if (layer instanceof CameraLayer && layer.name === "camera" && layer.position.numKeys > 1) {
                 var last = layer.position.numKeys;
                 var value = layer.position.keyValue(last);
                 layer.position.removeKey(last);
