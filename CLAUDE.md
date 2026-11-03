@@ -17,7 +17,7 @@
 
 ## Пайплайн
 
-Вход: `/ae-video:make` ведёт всё видео. Отдельные команды запускают один этап и соблюдают те же ворота: `/ae-video:transcript`, `:plan`, `:animate`, `:review`, `:base`. Навык `make` оркестрирует, `pipeline.py` хранит состояние и не пускает дальше, агенты и скрипты работают.
+Вход: `/ae-video:make` ведёт всё видео. Отдельные команды запускают один этап и соблюдают те же ворота: `/ae-video:transcript`, `:plan`, `:animate`, `:review`, `:base`, `:block`. Навык `make` оркестрирует, `pipeline.py` хранит состояние и не пускает дальше, агенты и скрипты работают.
 
 | Этап | Исполнитель | Результат | Ревью |
 |---|---|---|---|
@@ -53,7 +53,7 @@ plugin/                           то, что устанавливается
   config/defaults.json            все настройки по умолчанию
   config/pipeline.json            этапы и их зависимости
   skills/make/                    оркестратор
-  skills/setup, transcript, plan, animate, review, base/  отдельные команды автора
+  skills/setup, transcript, plan, animate, review, base, block/  отдельные команды автора
   skills/montage-fundamentals/    законы монтажа, цвета, типографики, движения
   skills/base-structure/          устройство базы для агентов
   skills/after-effects/           справочник по AE, из aedev-tools/adobe-agent-skills, Apache-2.0
@@ -65,6 +65,7 @@ plugin/                           то, что устанавливается
     ae_run.py, capture.py         запуск AE, сборка, съёмка кадров
     transcribe, refine_timings, approve_transcript, extend_timeline  транскрипт
     base_index, base_scan, sound_measure, setup_base  работа с базой
+    block_lab.py                  песочница нового блока: демо, правка чисел, перенос в базу
     settings.py, doctor.py        настройки и проверка компьютера
   ae/                             JSX: ревью маркеров, съёмка, раскладка, движок сцен
   examples/demo_scene.json        демонстрация блоков
@@ -74,6 +75,7 @@ plugin/                           то, что устанавливается
 Вне репозитория:
 
 - **База:** `bases_dir/<имя>/`, у автора свой git. Устройство: `docs/base.md`. Меняется только через `librarian`.
+- **Песочницы блоков:** `labs_dir/<id>/`: демо-сцена на словах-метках и тишине, свой `lab.aep`. В базу блок переносит `librarian` после «да» автора.
 - **Видео:** `<видео>/fragments/<фрагмент>/`, там `state.json`, файлы этапов, `reviews/`, `frames/`.
 - **Настройки:** `plugin/config/defaults.json` (общие значения, без личных путей) → `~/.config/ae-video/settings.json` (личные) → `<видео>/settings.json`. Описание: `docs/settings.md`.
 

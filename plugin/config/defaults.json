@@ -1,6 +1,7 @@
 {
   "bases_dir": "~/Documents/ae-video/bases",
   "base": "starter",
+  "labs_dir": "~/Documents/ae-video/labs",
   "transcribe": {
     "model": "mlx-community/whisper-large-v3-turbo",
     "language": "ru",
@@ -58,5 +59,13 @@
     "min_overlap": 8,
     "full_frame": 0.9,
     "settle": 0.8
+  },
+  "lab": {
+    "seconds": 4,
+    "word_seconds": 0.5,
+    "start_word": 2,
+    "tail": 1.0,
+    "width": 1920,
+    "height": 1080
   }
 }

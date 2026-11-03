@@ -67,6 +67,10 @@ def main():
             parser.error("укажите ключ")
         for part in args.key.split("."):
             value = value[part]
+        if isinstance(value, str):
+            # Строку печатаем как есть и с раскрытым ~: её подставляют в команды оболочки.
+            print(Path(value).expanduser() if value.startswith("~") else value)
+            return
     print(json.dumps(value, ensure_ascii=False, indent=2))
 
 

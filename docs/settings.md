@@ -18,6 +18,12 @@ python3 plugin/scripts/settings.py show --video <папка видео>
 |---|---|
 | `bases_dir` | Папка с базами |
 | `base` | Активная база |
+| `labs_dir` | Папка песочниц новых блоков |
+| `lab.seconds` | Длина демо-сцены песочницы, с |
+| `lab.word_seconds` | Шаг слов-меток демо-сцены, с |
+| `lab.start_word` | Слово-метка, на котором стартует блок |
+| `lab.tail` | Хвост демо-сцены после последней метки, с |
+| `lab.width`, `lab.height` | Размер кадра демо-сцены |
 | `transcribe.model` | Модель MLX Whisper |
 | `transcribe.language` | Язык записи |
 | `transcribe.review_below` | Слова с уверенностью ниже помечаются на проверку |

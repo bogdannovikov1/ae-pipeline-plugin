@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "plugin" / "scri
 from approve_transcript import transcript_hash
 from base_index import asset_lines, block_lines
 from base_scan import scan
+from block_lab import LabError, create as create_lab, promote, set_values
 from capture import moments
 from extend_timeline import merge as merge_part
 from pipeline import Fragment, PipelineError
@@ -534,6 +535,44 @@ class Starter(Case):
         for block in (STARTER / "blocks").iterdir():
             self.assertTrue((block / "block.jsxinc").is_file(), block.name)
             self.assertTrue((block / "block.json").is_file(), block.name)
+
+
+class Lab(Case):
+    def setUp(self):
+        super().setUp()
+        self.settings = merge(self.settings, {"labs_dir": str(self.root / "labs")})
+
+    def test_new_lab_is_a_valid_scene_outside_the_base(self):
+        folder = create_lab(self.settings, "pop")
+        self.assertEqual(check_scene(folder / "lab.scene.json", self.settings), [])
+        self.assertFalse((self.bases / "b" / "blocks" / "pop").exists())
+        with self.assertRaises(LabError):
+            create_lab(self.settings, "label")
+
+    def test_from_base_copies_the_block(self):
+        folder = create_lab(self.settings, "label", from_base=True)
+        self.assertTrue((folder / "blocks" / "label" / "block.jsxinc").is_file())
+
+    def test_set_changes_only_the_block_item(self):
+        folder = create_lab(self.settings, "pop")
+        set_values(self.settings, "pop", ["params.size=120", "tokens.motion.lead=0.2", "params.text=Да"])
+        item = json.loads((folder / "lab.scene.json").read_text())["items"][-1]
+        self.assertEqual(item["params"], {"size": 120, "text": "Да"})
+        self.assertEqual(item["tokens"], {"motion": {"lead": 0.2}})
+        with self.assertRaises(LabError):
+            set_values(self.settings, "pop", ["size=1"])
+
+    def test_promote_needs_description_and_consent_to_replace(self):
+        folder = create_lab(self.settings, "pop")
+        with self.assertRaises(LabError):
+            promote(self.settings, "pop")
+        meta = folder / "blocks" / "pop" / "block.json"
+        meta.write_text(json.dumps({"id": "pop", "description": "d", "when": "w", "params": {"size": "s"}}))
+        target = promote(self.settings, "pop")
+        self.assertTrue((target / "block.jsxinc").is_file())
+        with self.assertRaises(LabError):
+            promote(self.settings, "pop")
+        self.assertTrue(promote(self.settings, "pop", replace=True).is_dir())
 
 
 class Sounds(Case):
