@@ -574,6 +574,14 @@ class Lab(Case):
             promote(self.settings, "pop")
         self.assertTrue(promote(self.settings, "pop", replace=True).is_dir())
 
+    def test_promote_another_block_of_the_lab(self):
+        folder = create_lab(self.settings, "pop")
+        extra = folder / "blocks" / "wave"
+        extra.mkdir()
+        (extra / "block.jsxinc").write_text("")
+        (extra / "block.json").write_text(json.dumps({"id": "wave", "description": "d", "when": "w", "params": {"a": "b"}}))
+        self.assertTrue((promote(self.settings, "wave", lab="pop") / "block.json").is_file())
+
 
 class Sounds(Case):
     timing = {"sound_max_shift": 0.03, "sound_min_gap": 0.3}

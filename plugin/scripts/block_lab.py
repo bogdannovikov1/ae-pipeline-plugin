@@ -163,13 +163,17 @@ def build(settings, block, allowed):
     launch(settings, allowed)
     run_jsx(LAB_SCRIPT, {"LAB_PROJECT": project, "LAB_MODE": "open"}, settings, autosave)
     run_jsx(BUILD_SCRIPT, {"SCENE_PATH": (folder / SCENE).resolve(), "BASES_DIR": bases_dir(settings)}, settings, autosave)
-    run_jsx(LAB_SCRIPT, {"LAB_PROJECT": project, "LAB_MODE": "clean"}, settings, autosave)
+    comp = read_json(folder / SCENE)["comp"]["name"]
+    run_jsx(LAB_SCRIPT, {"LAB_PROJECT": project, "LAB_MODE": "clean", "LAB_COMP": comp}, settings, autosave)
     return project
 
 
-def promote(settings, block, replace=False):
-    """Переносит утверждённый блок в базу. Вызывает только librarian после выбора автора."""
-    source = lab_dir(settings, block) / "blocks" / block
+def promote(settings, block, replace=False, lab=None):
+    """Переносит утверждённый блок в базу. Вызывает только librarian после выбора автора.
+
+    В одной песочнице может жить несколько блоков: lab называет её, если она не совпадает с блоком.
+    """
+    source = lab_dir(settings, lab or block) / "blocks" / block
     for name in ("block.jsxinc", "block.json"):
         if not (source / name).is_file():
             raise LabError(f"В песочнице нет {name}")
@@ -194,6 +198,7 @@ def main():
     parser.add_argument("--from-base", action="store_true", help="для new: начать с копии блока базы")
     parser.add_argument("--seconds", type=float, help="для new: длина демо-сцены вместо lab.seconds")
     parser.add_argument("--launch", action="store_true", help="для build: автор разрешил запустить After Effects")
+    parser.add_argument("--lab", help="для promote: песочница, если её имя не совпадает с блоком")
     parser.add_argument("--replace", action="store_true", help="для promote: заменить блок базы")
     args = parser.parse_args()
 
@@ -206,7 +211,7 @@ def main():
         elif args.command == "build":
             print(f"Готово: {build(settings, args.block, args.launch)}")
         elif args.command == "promote":
-            print(f"В базе: {promote(settings, args.block, args.replace)}")
+            print(f"В базе: {promote(settings, args.block, args.replace, args.lab)}")
         else:
             print(lab_dir(settings, args.block))
     except (LabError, RuntimeError) as error:
