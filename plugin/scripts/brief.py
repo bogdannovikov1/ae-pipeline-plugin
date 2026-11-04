@@ -87,6 +87,8 @@ def env_lines(info):
         f"- Плагин: `{info['plugin']}` (версия {info['plugin_version']}, движок {info['engine']}). Все скрипты запускай отсюда: `{info['scripts']}`.",
         f"- База: `{info['base']}`" + ("" if info["base_found"] else " — НЕ НАЙДЕНА: проверь bases_dir и base в настройках") + ".",
     ]
+    if re.fullmatch(r"\d+\.\d+\.\d+", Path(info["plugin"]).name):
+        lines.append(f"- Это копия плагина с номером версии. После обновления плагина этой папки не будет: возьми самую новую версию в `{Path(info['plugin']).parent}` и обнови этот файл командой `brief.py agents-md <видео>` оттуда.")
     if info["base_found"] and not info["compatible"]:
         lines.append(f"- ВНИМАНИЕ: база требует движок {info['base_engine']}, а этот плагин содержит движок {info['engine']}. Ты запущен из устаревшей копии плагина или база новее. Не собирай, скажи автору.")
     if "video" in info:

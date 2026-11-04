@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "plugin" / "scri
 from approve_transcript import transcript_hash
 from base_index import asset_lines, block_lines
 from base_scan import scan
-from brief import brief as brief_text, roles as brief_roles, write_agents_md
+from brief import brief as brief_text, env_lines as brief_env_lines, roles as brief_roles, write_agents_md
 from block_lab import LabError, create as create_lab, promote, set_values
 from capture import moments
 from extend_timeline import merge as merge_part
@@ -933,6 +933,13 @@ class Brief(Case):
         text = brief_text("animator", task="поправить звук", task_only=True)
         self.assertNotIn("# Роль", text)
         self.assertIn("поправить звук", text)
+
+    def test_versioned_copy_explains_update(self):
+        info = {"plugin": "/x/cache/ae-video/0.4.0", "plugin_version": "0.4.0", "engine": 3, "scripts": "s",
+                "base": "/b", "base_found": True, "base_engine": 3, "compatible": True}
+        self.assertTrue(any("самую новую версию в `/x/cache/ae-video`" in line for line in brief_env_lines(info)))
+        info["plugin"] = "/repo/plugin"
+        self.assertFalse(any("номером версии" in line for line in brief_env_lines(info)))
 
     def test_agents_md_keeps_author_text(self):
         path = self.video / "AGENTS.md"
