@@ -16,7 +16,7 @@ from approve_transcript import transcript_hash
 from settings import bases_dir, settings_for
 
 
-ENGINE_VERSION = 2  # растёт, когда блоки базы перестают работать на старом движке
+ENGINE_VERSION = 3  # растёт, когда блоки базы перестают работать на старом движке
 
 
 def file_hash(path):

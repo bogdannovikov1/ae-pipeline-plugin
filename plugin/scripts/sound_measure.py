@@ -67,9 +67,9 @@ def main():
     assets = json.loads(path.read_text(encoding="utf-8"))
     for asset in assets:
         if asset["type"] == "sound":
-            path = base / "assets" / asset["file"]
-            asset["audible"] = measure(path)
-            asset["hit"], asset["loudness"] = hit_and_loudness(pcm(path), asset["audible"])
+            sound = base / "assets" / asset["file"]
+            asset["audible"] = measure(sound)
+            asset["hit"], asset["loudness"] = hit_and_loudness(pcm(sound), asset["audible"])
             print(f"{asset['id']}: {asset['audible']} с, удар {asset['hit']} с, {asset['loudness']} дБ")
     path.write_text(json.dumps(assets, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
