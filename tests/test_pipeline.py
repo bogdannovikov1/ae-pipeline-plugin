@@ -858,6 +858,25 @@ class PlanCheck(Case):
         self.assertEqual(check_scene(path, self.settings), [])
         self.assertEqual(plan_check(path, self.bases / "b"), ([], []))
 
+    def test_global_items_count_for_every_beat(self):
+        self.write("F1.animation.json", {"transcript_hash": timeline()["transcript_hash"], "beats": [
+            {"id": "intro", "at_word": 0, "until_word": 1, "blocks": ["array_cells", "label"]}]})
+        path = self.write("F1.scene.json", self.scene(items=[
+            {"id": "bg", "block": "label", "always": True, "beat": "global"},
+            {"id": "cells", "block": "array_cells", "at_word": 0, "beat": "intro"}]))
+        self.assertEqual(plan_check(path, self.bases / "b"), ([], []))
+
+    def test_missing_helper_block_only_warns(self):
+        self.write("F1.animation.json", {"transcript_hash": timeline()["transcript_hash"], "beats": [
+            {"id": "intro", "at_word": 0, "until_word": 1, "blocks": ["array_cells", "label"]}]})
+        path = self.write("F1.scene.json", self.scene(items=self.items()))
+        self.assertTrue(any("нет утверждённого блока label" in e for e in check_scene(
+            path, merge(self.settings, {"plan_check": {"helper_blocks": []}}))))
+        self.assertEqual(check_scene(path, self.settings), [])
+        errors, warnings = plan_check(path, self.bases / "b", ["label"])
+        self.assertEqual(errors, [])
+        self.assertIn("вспомогательные блоки label", warnings[0])
+
     def test_unknown_beat_is_error(self):
         path = self.write("F1.scene.json", self.scene(items=self.items(
             {"id": "fill", "block": "fill_cells", "at_word": 2, "beat": "nope"})))

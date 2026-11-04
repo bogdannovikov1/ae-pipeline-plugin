@@ -54,26 +54,30 @@ def plan_errors(plan):
     return errors
 
 
-def coverage(scene, plan):
+def coverage(scene, plan, helpers=()):
     """Ошибки и предупреждения сверки сцены с планом.
 
-    Сцена без поля beat у элементов — старый формат: сверка пропускается с предупреждением.
+    Блоки общих элементов (beat "global" или always без beat) засчитываются каждому биту.
+    Вспомогательные блоки из настройки plan_check.helper_blocks обязательны только на словах:
+    их отсутствие — предупреждение. Сцена без поля beat у элементов — старый формат: сверка
+    пропускается с предупреждением.
     """
     items = scene.get("items") or []
     beats = plan.get("beats") or []
+    helpers = set(helpers)
     if not any("beat" in item for item in items):
         return [], ["элементы сцены не привязаны к битам плана (поле beat): сверка с планом пропущена"]
 
     errors, warnings = [], []
     ids = [beat_id(beat, number) for number, beat in enumerate(beats)]
     by_beat = {ident: [] for ident in ids}
+    shared = set()
     for number, item in enumerate(items):
         label, beat = item_label(item, number), item.get("beat")
-        if beat is None:
-            if not item.get("always"):
-                warnings.append(f"{label}: не привязан к биту плана (поле beat)")
-        elif beat == GLOBAL_BEAT:
-            continue
+        if beat == GLOBAL_BEAT or (beat is None and item.get("always")):
+            shared.add(item.get("block"))
+        elif beat is None:
+            warnings.append(f"{label}: не привязан к биту плана (поле beat)")
         elif beat not in by_beat:
             errors.append(f"{label}: бит {beat} не найден в плане")
         else:
@@ -82,18 +86,23 @@ def coverage(scene, plan):
     for number, beat in enumerate(beats):
         ident = ids[number]
         need = approved_blocks(beat)
-        used = {item.get("block") for item in by_beat[ident]}
-        if not by_beat[ident]:
+        main = [block for block in need if block not in helpers]
+        own = {item.get("block") for item in by_beat[ident]}
+        used = own | shared
+        if not by_beat[ident] and not (need and set(need) <= shared):
             message = f"бит {ident} (слова {beat.get('at_word')}–{beat.get('until_word')}): в сцене нет элементов"
-            (errors if need else warnings).append(message)
+            (errors if main else warnings).append(message)
             continue
-        for block in need:
+        for block in main:
             if block not in used:
                 errors.append(
                     f"бит {ident}: нет утверждённого блока {block}. Заменять приём без решения автора нельзя: "
                     f"верни {block} или согласуй с автором замену и запиши её в план"
                 )
-        extra = sorted(str(b) for b in used - set(need)) if need else []
+        unused = sorted(block for block in need if block in helpers and block not in used)
+        if unused:
+            warnings.append(f"бит {ident}: вспомогательные блоки {', '.join(unused)} из плана не использованы")
+        extra = sorted(str(b) for b in own - set(need) - helpers) if need else []
         if extra:
             warnings.append(f"бит {ident}: блоки {', '.join(extra)} не указаны в плане; если это замена приёма, спроси автора")
     return errors, warnings
@@ -141,8 +150,8 @@ def target_issues(scene, folder, base):
     return errors, warnings
 
 
-def check(scene_path, base):
-    """Все проверки этого модуля: (ошибки, предупреждения)."""
+def check(scene_path, base, helpers=()):
+    """Все проверки этого модуля: (ошибки, предупреждения). helpers: настройка plan_check.helper_blocks."""
     scene_path = Path(scene_path)
     scene = read_json(scene_path)
     errors, warnings = target_issues(scene, scene_path.parent, base)
@@ -150,7 +159,7 @@ def check(scene_path, base):
     if plan_file.is_file():
         plan = read_json(plan_file)
         errors += plan_errors(plan)
-        more_errors, more_warnings = coverage(scene, plan)
+        more_errors, more_warnings = coverage(scene, plan, helpers)
         errors += more_errors
         warnings += more_warnings
     return errors, warnings
@@ -176,8 +185,9 @@ def main():
     args = parser.parse_args()
     scene_path = args.scene.resolve()
     scene = read_json(scene_path)
-    base = resolve_base(scene["base"], settings_for(scene_path))
-    errors, warnings = check(scene_path, base)
+    settings = settings_for(scene_path)
+    base = resolve_base(scene["base"], settings)
+    errors, warnings = check(scene_path, base, settings["plan_check"]["helper_blocks"])
     plan_file = plan_path(scene_path)
     if plan_file.is_file():
         print("\n".join(coverage_lines(scene, read_json(plan_file))))

@@ -156,7 +156,7 @@ def check_scene(path, settings=None):
         errors += word_errors(item, count, label)
         known.add(item.get("id") or f"{block}_{number}")
     if not errors and (base / "tokens.json").is_file():
-        errors += plan_check(path, base)[0]
+        errors += plan_check(path, base, settings.get("plan_check", {}).get("helper_blocks", []))[0]
     return errors
 
 

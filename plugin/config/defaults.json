@@ -70,5 +70,16 @@
     "tail": 1.0,
     "width": 1920,
     "height": 1080
+  },
+  "plan_check": {
+    "helper_blocks": [
+      "appear",
+      "move",
+      "label",
+      "group",
+      "stagger_in",
+      "idle",
+      "attach"
+    ]
   }
 }

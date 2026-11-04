@@ -197,7 +197,7 @@ def scene_warnings(scene_path, settings):
     data = read_json(resolve_path(scene["timeline"], scene_path.parent))
     base = resolve_base(scene["base"], settings)
     tokens = read_json(base / "tokens.json")
-    errors, plan_warnings = plan_check(scene_path, base)
+    errors, plan_warnings = plan_check(scene_path, base, settings.get("plan_check", {}).get("helper_blocks", []))
     warnings = [f"ошибка: {error}" for error in errors] + plan_warnings
     warnings += timing_warnings(scene, data, tokens, settings["timing"])
     log = sound_log_path(scene_path)
