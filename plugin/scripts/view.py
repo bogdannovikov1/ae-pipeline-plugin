@@ -129,19 +129,33 @@ def layout_path(scene):
 
 
 def sound_warnings(sounds, timing):
-    """Середина звука должна совпадать с серединой анимации, а события не звучать подряд."""
+    """Удар звука должен попасть в якорь (без якоря: середина в середину анимации), а события не звучать подряд.
+
+    Подложка тянется под анимацией и в этих проверках не участвует. Удары одной серии проверяются по своему разрыву.
+    """
     warnings = []
     centre = lambda sound: (sound["start"] + sound["end"]) / 2
-    for sound in sounds:
-        shift = centre(sound) - (sound["animation_start"] + sound["animation_end"]) / 2
+    moment = lambda sound: sound["hit"] if sound.get("hit") is not None else centre(sound)
+    strikes = [sound for sound in sounds if sound.get("role") != "bed"]
+    for sound in strikes:
+        if sound.get("anchor") is not None:
+            shift = moment(sound) - sound["anchor"]
+            target = "якоря"
+        else:
+            shift = centre(sound) - (sound["animation_start"] + sound["animation_end"]) / 2
+            target = "середины анимации"
         # В начале ролика звук нельзя сдвинуть левее нуля.
         if abs(shift) > timing["sound_max_shift"] and sound["start"] > 0:
             side = "позже" if shift > 0 else "раньше"
-            warnings.append(f"{sound['item']}: {sound['sound']} {side} середины анимации на {abs(shift):.2f} с")
-    ordered = sorted(sounds, key=centre)
+            warnings.append(f"{sound['item']}: {sound['sound']} {side} {target} на {abs(shift):.2f} с")
+    ordered = sorted(strikes, key=moment)
     for first, second in zip(ordered, ordered[1:]):
-        gap = centre(second) - centre(first)
-        if gap < timing["sound_min_gap"]:
+        gap = moment(second) - moment(first)
+        series = first.get("series")
+        if series is not None and series == second.get("series"):
+            if gap < timing["sound_series_gap"]:
+                warnings.append(f"{first['item']}: удары серии {series} теснее {timing['sound_series_gap']} с, разрыв {gap:.2f} с")
+        elif gap < timing["sound_min_gap"]:
             warnings.append(f"{first['item']} и {second['item']}: звуки подряд, разрыв {gap:.2f} с, отключите один: sound false")
     return warnings
 

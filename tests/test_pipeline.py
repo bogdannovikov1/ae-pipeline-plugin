@@ -15,6 +15,7 @@ from extend_timeline import merge as merge_part
 from pipeline import Fragment, PipelineError
 from settings import find_video, load_settings, merge, settings_for
 from sound_measure import trailing_start
+from sound_library import classify, hit_and_loudness, init as init_library, load_scheme, place_hits, propose
 from view import layout_warnings, scene_warnings, sound_log_path, sound_warnings, review_lines, scene_lines, text_lines, timing_warnings
 from setup_base import STARTER, create_base
 from validate import ENGINE_VERSION, check_built, file_hash
@@ -613,6 +614,35 @@ class Sounds(Case):
         self.assertEqual(sound_log_path(Path("F1.scene.json")).name, "F1.sounds.json")
 
 
+class SoundRoles(Case):
+    timing = {"sound_max_shift": 0.03, "sound_min_gap": 0.3, "sound_series_gap": 0.08}
+
+    def sound(self, item, hit, role="single", series=None, anchor=None):
+        return {"item": item, "sound": "tick", "start": hit - 0.01, "end": hit + 0.09, "hit": hit,
+                "anchor": hit if anchor is None else anchor, "role": role, "series": series,
+                "animation_start": 1.0, "animation_end": 2.0}
+
+    def test_series_uses_its_own_gap(self):
+        sounds = [self.sound("g", t, "series", "g/0") for t in (1.0, 1.1, 1.2)]
+        self.assertEqual(sound_warnings(sounds, self.timing), [])
+
+    def test_series_too_dense(self):
+        sounds = [self.sound("g", t, "series", "g/0") for t in (1.0, 1.05)]
+        self.assertIn("серии", sound_warnings(sounds, self.timing)[0])
+
+    def test_other_event_next_to_series(self):
+        sounds = [self.sound("g", 1.0, "series", "g/0"), self.sound("g", 1.1, "series", "g/0"), self.sound("b", 1.2)]
+        self.assertIn("подряд", sound_warnings(sounds, self.timing)[0])
+
+    def test_bed_is_not_checked(self):
+        bed = {"item": "g", "sound": "bed", "start": 1.0, "end": 2.0, "hit": None, "anchor": None,
+               "role": "bed", "series": None, "animation_start": 1.0, "animation_end": 2.0}
+        self.assertEqual(sound_warnings([bed, self.sound("g", 1.5)], self.timing), [])
+
+    def test_anchor_shift(self):
+        self.assertIn("якоря", sound_warnings([self.sound("a", 1.5, anchor=1.4)], self.timing)[0])
+
+
 class Moments(Case):
     def test_order_offsets_and_limit(self):
         starts = [0.9, 1.1, 5]
@@ -735,6 +765,55 @@ class Rounds(Case):
         self.report(2)
         self.assertEqual(f.round()["decision"], "author")
         self.assertEqual(f.next_action()["stage"], "polish")
+
+
+class SoundLibraryTest(unittest.TestCase):
+    def setUp(self):
+        self.scheme = load_scheme()
+
+    def test_init_makes_folders_and_keeps_hints(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            init_library(root, self.scheme)
+            hint = root / "01_Появления" / "серия" / "ЧТО_СЮДА.txt"
+            self.assertTrue(hint.is_file())
+            self.assertTrue((root / "01_Появления" / "одиночный" / "1.00–2.00с").is_dir())
+            hint.write_text("свой текст", encoding="utf-8")
+            init_library(root, self.scheme)
+            self.assertEqual(hint.read_text(encoding="utf-8"), "свой текст")
+
+    def test_classify_by_path(self):
+        place = classify(Path("02_Выделения/заливка/tick.wav"), self.scheme)
+        self.assertEqual((place["event"], place["role"]), ("scan", "single"))
+        old = classify(Path("01_Появления/универсальный/до_0.15с/pop.mp3"), self.scheme)
+        self.assertEqual((old["event"], old["role"], old["character"]), ("appear", "single", "универсальный"))
+        self.assertIsNone(classify(Path("Прочее/a.wav"), self.scheme))
+
+    def test_series_hits_thinned(self):
+        self.assertEqual(place_hits([0, 0.05, 0.1, 0.3], 0.08, 10), [0, 0.1, 0.3])
+        self.assertEqual(len(place_hits([i * 0.1 for i in range(20)], 0.08, 10)), 10)
+
+    def test_hit_and_loudness(self):
+        samples = [0.0] * 100 + [0.9] + [0.1] * 100
+        hit, loud = hit_and_loudness(samples, 1.0)
+        self.assertAlmostEqual(hit, 100 / 22050, places=3)
+        self.assertLess(loud, 0)
+
+    def test_propose_by_roles(self):
+        files = [
+            {"id": "long", "event": "appear", "role": "single", "audible": 0.6},
+            {"id": "short", "event": "appear", "role": "single", "audible": 0.1},
+            {"id": "tap", "event": "appear", "role": "series", "audible": 0.05},
+            {"id": "air", "event": "appear", "role": "bed", "audible": 2.0},
+        ]
+        sounds = propose(self.scheme, files)
+        appear = sounds["events"]["appear"]
+        self.assertEqual(appear["tiers"], ["short", "long"])
+        self.assertEqual(appear["series"]["sounds"], ["tap"])
+        self.assertEqual(appear["bed"]["sound"], "air")
+        self.assertEqual(sounds["fallback"]["group"], "appear")
+        self.assertNotIn("move", sounds["events"])
+        self.assertIsNone(sounds["events"]["dim"])
 
 
 if __name__ == "__main__":

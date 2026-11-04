@@ -1,7 +1,7 @@
 // Scene engine: shared helpers for animation blocks. Blocks live in the base folder.
 
 $.global.Engine = (function () {
-    var E = { blocks: {}, store: {}, starts: {}, footage: {}, soundLog: [], current: "", tokens: null, assets: [], comp: null, base: "", timeline: null };
+    var E = { blocks: {}, store: {}, starts: {}, footage: {}, soundLog: [], soundCalls: {}, current: "", tokens: null, assets: [], comp: null, base: "", timeline: null };
 
     // Returns a copy of base with patch applied over it: one item can restyle anything.
     E.overlay = function (base, patch) {
@@ -259,17 +259,31 @@ $.global.Engine = (function () {
         throw new Error("Unknown asset: " + id);
     };
 
-    function audibleLength(id, layer) {
+    function assetInfo(id) {
         for (var i = 0; i < E.assets.length; i++) {
-            if (E.assets[i].id === id && E.assets[i].audible) {
-                return E.assets[i].audible;
+            if (E.assets[i].id === id) {
+                return E.assets[i];
             }
         }
-        return layer.source.duration;
+        return {};
     }
 
-    // An appearance picks its sound by how long it takes: a quick pop would not fit a slow one.
-    function eventSound(name, span) {
+    function audibleLength(id, layer) {
+        return assetInfo(id).audible || layer.source.duration;
+    }
+
+    // Where the strike of the file is, from its start: measured peak, else the middle of what is heard.
+    function hitOffset(id, audible) {
+        var hit = assetInfo(id).hit;
+        return hit === undefined ? audible / 2 : hit;
+    }
+
+    function round(value) {
+        return Math.round(value * 1000) / 1000;
+    }
+
+    // Old tokens: an appearance picks its sound by how long it takes, other events name one sound.
+    function legacySound(name, span) {
         var tiers = E.tokens.sounds.appear;
         if (tiers && (name === "pop" || name === "group")) {
             for (var i = 0; i < tiers.length; i++) {
@@ -281,32 +295,217 @@ $.global.Engine = (function () {
         return E.tokens.sounds[name];
     }
 
-    // A sound sits in the middle of the animation: their centres meet, whichever is longer.
-    // length is how long the animation runs from t. A block may name its sound; false in params turns it off.
-    E.sound = function (params, name, t, length) {
-        var span = length === undefined ? E.tokens.motion.pop_duration : length;
-        var id = params.sound === undefined ? eventSound(name, span) : params.sound;
-        if (!id) {
-            return [];
+    // The event's settings: its own, else the event it falls back to. null turns the sound off,
+    // undefined means the tokens have no events for it and the old rules apply.
+    function eventConfig(name) {
+        var sounds = E.tokens.sounds;
+        var events = sounds.events;
+        if (!events) {
+            return undefined;
         }
+        var key = name;
+        if (!events.hasOwnProperty(key)) {
+            var fallback = sounds.fallback || {};
+            if (fallback[name] === null) {
+                return null;
+            }
+            key = fallback[name];
+            if (key === undefined || !events.hasOwnProperty(key)) {
+                return undefined;
+            }
+        }
+        var config = events[key];
+        if (typeof config === "string") {
+            return { tiers: [config] };
+        }
+        return config || null;
+    }
+
+    // The tier whose heard length is closest to the animation: unmeasured files lose to measured ones.
+    function closestTier(tiers, span) {
+        var best = tiers[0];
+        var bestDistance = Infinity;
+        for (var i = 0; i < tiers.length; i++) {
+            var audible = assetInfo(tiers[i]).audible;
+            var distance = audible === undefined ? Infinity : Math.abs(audible - span);
+            if (distance < bestDistance) {
+                best = tiers[i];
+                bestDistance = distance;
+            }
+        }
+        return best;
+    }
+
+    // Stable per item: the same scene gets the same variants on every rebuild.
+    function itemSeed() {
+        var seed = 0;
+        for (var i = 0; i < E.current.length; i++) {
+            seed = (seed * 31 + E.current.charCodeAt(i)) % 100003;
+        }
+        return seed;
+    }
+
+    function nextCall() {
+        var count = E.soundCalls[E.current] || 0;
+        E.soundCalls[E.current] = count + 1;
+        return count;
+    }
+
+    // A file goes in at its loudness: with a measured loudness it is brought to the common level.
+    function gain(id, shift) {
+        var sounds = E.tokens.sounds;
+        var loudness = assetInfo(id).loudness;
+        var level = sounds.level;
+        if (loudness !== undefined && sounds.reference_loudness !== undefined) {
+            level += sounds.reference_loudness - loudness;
+        }
+        return level + (shift || 0);
+    }
+
+    // Puts one file so that its strike lands at moment (null: centre to centre) and logs it.
+    function place(id, entry, level, stretch) {
         var layer = E.comp.layers.add(E.asset(id));
-        var audible = audibleLength(id, layer);
-        var middle = t + span / 2;
-        var start = Math.max(0, middle - audible / 2);
+        var scale = 1;
+        if (stretch && stretch !== 100) {
+            layer.stretch = stretch;
+            scale = stretch / 100;
+        }
+        var audible = audibleLength(id, layer) * scale;
+        var offset = hitOffset(id, audible / scale) * scale;
+        var start;
+        if (entry.anchor === null) {
+            start = Math.max(0, entry.t + entry.span / 2 - audible / 2);
+        } else {
+            start = Math.max(0, entry.anchor - offset);
+        }
         layer.startTime = start;
-        var levels = E.tokens.sounds.levels || {};
-        var level = levels[name] === undefined ? E.tokens.sounds.level : levels[name];
         layer.audio.audioLevels.setValue([level, level]);
         E.soundLog.push({
             item: E.current,
             sound: id,
-            event: name,
-            start: Math.round(start * 1000) / 1000,
-            end: Math.round((start + audible) * 1000) / 1000,
-            animation_start: Math.round(t * 1000) / 1000,
-            animation_end: Math.round((t + span) * 1000) / 1000
+            event: entry.event,
+            start: round(start),
+            end: round(start + audible),
+            animation_start: round(entry.t),
+            animation_end: round(entry.t + entry.span),
+            role: entry.role,
+            series: entry.series,
+            anchor: entry.anchor === null ? null : round(entry.anchor),
+            hit: round(start + offset)
         });
-        return [layer];
+        return layer;
+    }
+
+    // Hits closer than gap merge into the first; too many keep an even spread with the first and last.
+    function thinHits(hits, gap, most) {
+        var sorted = hits.slice(0).sort(function (a, b) { return a - b; });
+        var kept = [];
+        for (var i = 0; i < sorted.length; i++) {
+            if (!kept.length || sorted[i] - kept[kept.length - 1] >= gap) {
+                kept.push(sorted[i]);
+            }
+        }
+        if (most === undefined || kept.length <= most) {
+            return kept;
+        }
+        if (most <= 1) {
+            return kept.slice(0, Math.max(0, most));
+        }
+        var spread = [];
+        for (var k = 0; k < most; k++) {
+            spread.push(kept[Math.round(k * (kept.length - 1) / (most - 1))]);
+        }
+        return spread;
+    }
+
+    function playSeries(config, series, entry, hits, call) {
+        var times = thinHits(hits, series.gap || 0, series.max_hits);
+        var sounds = series.sounds || config.tiers || [];
+        var layers = [];
+        entry.role = "series";
+        entry.series = E.current + "/" + call;
+        for (var k = 0; k < times.length && sounds.length; k++) {
+            var share = times.length > 1 ? k / (times.length - 1) : 0;
+            var stretch = series.pitch_step ? 100 / Math.pow(2, series.pitch_step * k / 12) : 100;
+            entry.anchor = times[k];
+            var shift = (config.level || 0) + (series.fade_db || 0) * share;
+            layers.push(place(sounds[k % sounds.length], entry, gain(sounds[k % sounds.length], shift), stretch));
+        }
+        return layers;
+    }
+
+    // A quiet bed under a long animation: starts with it, is cut at its end and fades out.
+    function playBed(bed, entry) {
+        var layer = E.comp.layers.add(E.asset(bed.sound));
+        var end = Math.min(entry.t + entry.span, entry.t + layer.source.duration);
+        var fade = Math.min(bed.fade === undefined ? entry.span / 4 : bed.fade, end - entry.t);
+        var level = gain(bed.sound, bed.level);
+        layer.startTime = entry.t;
+        layer.outPoint = end;
+        layer.audio.audioLevels.setValueAtTime(end - fade, [level, level]);
+        layer.audio.audioLevels.setValueAtTime(end, [-96, -96]);
+        E.soundLog.push({
+            item: E.current,
+            sound: bed.sound,
+            event: entry.event,
+            start: round(entry.t),
+            end: round(end),
+            animation_start: round(entry.t),
+            animation_end: round(entry.t + entry.span),
+            role: "bed",
+            series: null,
+            anchor: null,
+            hit: null
+        });
+        return layer;
+    }
+
+    // length is how long the animation runs from t; hits are the moments its elements should sound.
+    // A block may name its sound; false in params turns it off. Events from the base tokens decide the rest:
+    // a single sound of the closest length with its strike at the anchor, a series of strikes for a group,
+    // a bed under a long animation. Without an anchor the sound and the animation share their centre.
+    E.sound = function (params, name, t, length, hits) {
+        var span = length === undefined ? E.tokens.motion.pop_duration : length;
+        if (params.sound === false || params.sound === null) {
+            return [];
+        }
+        var config = eventConfig(name);
+        var entry = { event: name, t: t, span: span, role: "single", series: null, anchor: null };
+        if (config === undefined || (params.sound !== undefined && config === null)) {
+            var id = params.sound === undefined ? legacySound(name, span) : params.sound;
+            if (!id) {
+                return [];
+            }
+            var levels = E.tokens.sounds.levels || {};
+            var level = levels[name] === undefined ? gain(id) : levels[name];
+            return [place(id, entry, level)];
+        }
+        if (config === null) {
+            return [];
+        }
+        var call = nextCall();
+        if (config.anchor !== undefined) {
+            entry.anchor = t + span * config.anchor;
+        }
+        if (params.sound !== undefined) {
+            return [place(params.sound, entry, gain(params.sound, config.level))];
+        }
+        var layers = [];
+        var series = config.series;
+        if (series && hits && hits.length >= (series.min_hits || 2) && span >= (series.min_span || 0)) {
+            layers = playSeries(config, series, entry, hits, call);
+        } else if (config.tiers && config.tiers.length) {
+            var chosen = closestTier(config.tiers, span);
+            var variants = config.variants && config.variants[chosen];
+            if (variants && variants.length) {
+                chosen = variants[(itemSeed() + call) % variants.length];
+            }
+            layers.push(place(chosen, entry, gain(chosen, config.level)));
+        }
+        if (config.bed && config.bed.sound && span >= (config.bed.min_span || 0)) {
+            layers.push(playBed(config.bed, entry));
+        }
+        return layers;
     };
 
     return E;

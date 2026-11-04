@@ -2,6 +2,7 @@
   "bases_dir": "~/Documents/ae-video/bases",
   "base": "starter",
   "labs_dir": "~/Documents/ae-video/labs",
+  "sound_library_dir": "~/Documents/ae-video/sound_library",
   "transcribe": {
     "model": "mlx-community/whisper-large-v3-turbo",
     "language": "ru",
@@ -52,6 +53,7 @@
     "long_phrase_seconds": 2.5,
     "long_phrase_zone": 0.5,
     "sound_min_gap": 0.3,
+    "sound_series_gap": 0.08,
     "sound_max_shift": 0.03
   },
   "layout": {

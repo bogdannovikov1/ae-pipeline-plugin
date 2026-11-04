@@ -1,0 +1,124 @@
+{
+  "version": 1,
+  "roles": {
+    "одиночный": "single",
+    "серия": "series",
+    "подложка": "bed",
+    "нарастание": "single",
+    "заливка": "single",
+    "тик": "single"
+  },
+  "bins": {
+    "single": ["до_0.15с", "0.15–0.40с", "0.40–1.00с", "1.00–2.00с"],
+    "long": ["0.50–1.00с", "1.00–2.00с", "2.00–4.00с"]
+  },
+  "categories": [
+    {
+      "folder": "01_Появления",
+      "event": "appear",
+      "fallback_from": ["pop", "group"],
+      "anchor": 0.55,
+      "roles": {
+        "одиночный": {"bins": "single", "hint": "Появление одного объекта: щелчок, поп, мягкий удар. Длинные дубли для медленных появлений."},
+        "серия": {"hint": "Короткие удары 0,03–0,15 с для групп: удар на каждый элемент или уровень графа. Положите 3–6 похожих дублей одного звука."},
+        "подложка": {"hint": "Мягкий длинный звук 1–3 с под всю большую группу: шиммер, лёгкое нарастание. Звучит тихо, под серией."}
+      },
+      "blocks": "object_pop, appear, callout, points, list_card, boxes; группы: array_cells, object_cards, stagger_in, strip_chips, choice_rows, table, linked_list, bar_chart, graph"
+    },
+    {
+      "folder": "02_Выделения",
+      "event": "highlight",
+      "anchor": 0.3,
+      "roles": {
+        "одиночный": {"bins": "single", "hint": "Обводка, рамка, акцент: лёгкий блик или мягкий тон."},
+        "заливка": {"event": "scan", "hint": "Заливка ячейки при проходе по массиву: очень тихий короткий тик, их бывает много подряд."}
+      },
+      "blocks": "card_focus, highlight_cell, accent, focus (frame); заливка: fill_cells, table_select"
+    },
+    {
+      "folder": "03_Движения",
+      "event": "move",
+      "anchor": 0.5,
+      "roles": {"одиночный": {"bins": "single", "hint": "Перелёт объекта: свист по длине полёта, пик на середине."}},
+      "blocks": "pointer_move, fly_asset, path_move, move, memory_strip, linked_list, table"
+    },
+    {
+      "folder": "04_Переходы",
+      "event": "transition",
+      "fallback_from": ["swap"],
+      "anchor": 0.5,
+      "roles": {"одиночный": {"bins": "single", "hint": "Обмен местами, смена панели или кадра: свист, перелистывание."}},
+      "blocks": "swap_cells, zone_panel, strip_frame"
+    },
+    {
+      "folder": "05_Камера_и_масштаб",
+      "event": "camera",
+      "anchor": 0.5,
+      "roles": {"одиночный": {"bins": "single", "hint": "Наезд, отъезд, панорама: мягкий воздушный свист, низкий, тише перелёта."}},
+      "blocks": "camera"
+    },
+    {
+      "folder": "06_Превращения",
+      "event": "morph",
+      "anchor": 0.5,
+      "roles": {"одиночный": {"bins": "single", "hint": "Форма меняется, карточка сжимается или растягивается: упругий, тянущийся звук."}},
+      "blocks": "morph, class_card, shape (шаги)"
+    },
+    {
+      "folder": "07_Прорисовка_и_заполнение",
+      "event": "draw",
+      "fallback_from": ["arrow"],
+      "anchor": 0.5,
+      "roles": {
+        "одиночный": {"bins": "single", "hint": "Рисуется стрелка, линия, график: шорох штриха по длине прорисовки."},
+        "заливка": {"event": "fill", "hint": "Заполнение объёмом: вода, полоса, область. Плавный нарастающий звук."}
+      },
+      "blocks": "hand_arrow, connector, plot, shape2d, divider; заливка: water_fill, region"
+    },
+    {
+      "folder": "08_Исчезновения",
+      "event": "exit",
+      "anchor": 0.0,
+      "roles": {"одиночный": {"bins": "single", "hint": "Объект уходит: обратный свист, мягкий щелчок, тише появления."}},
+      "blocks": "appear (exit), mask_reveal"
+    },
+    {
+      "folder": "09_Мышь_и_интерфейс",
+      "event": "cursor",
+      "anchor": 0.3,
+      "roles": {
+        "одиночный": {"bins": "single", "hint": "Клик курсора, выбор строки, нажатие кнопки."},
+        "тик": {"event": "tick", "hint": "Короткий тик шага прогресса или счётчика."}
+      },
+      "blocks": "cursor, table_select, progress (тики)"
+    },
+    {
+      "folder": "10_Текст_числа_код",
+      "event": "text",
+      "anchor": 0.3,
+      "roles": {
+        "одиночный": {"bins": "single", "hint": "Появление текста и подписи. Обычно тишина, звук только для важной фразы."},
+        "серия": {"event": "type", "hint": "Печать текста и кода: короткие клавишные удары, 3–6 дублей."},
+        "тик": {"event": "number", "hint": "Смена числа, значения, формулы: короткий цифровой тик."}
+      },
+      "blocks": "text_reveal, text_fx, phrase_stack; печать: text_fx typewriter, code; числа: asset_value, strip_value, formula, text_steps"
+    },
+    {
+      "folder": "11_Результат_и_сигналы",
+      "event": "result",
+      "anchor": 0.2,
+      "roles": {"одиночный": {"bins": "single", "hint": "Найдено, готово, верно или неверно: короткий музыкальный сигнал."}},
+      "blocks": "progress (готово), linked_list (найдено)"
+    },
+    {
+      "folder": "12_Отсчет_и_нарастание",
+      "event": "riser",
+      "anchor": 1.0,
+      "roles": {
+        "нарастание": {"bins": "long", "hint": "Нарастание к важному моменту, заканчивается в момент события."},
+        "тик": {"event": "tick", "anchor": 0.3, "hint": "Отсчёт: ровные тики."}
+      },
+      "blocks": "подложка длинных групп, отсчёт"
+    }
+  ]
+}
