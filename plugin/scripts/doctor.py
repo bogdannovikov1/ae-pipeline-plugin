@@ -3,6 +3,7 @@
 import importlib.util
 import json
 import platform
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -14,7 +15,10 @@ FONT_FOLDERS = ["~/Library/Fonts", "/Library/Fonts"]
 
 
 def has_font(name):
-    return any(next(Path(f).expanduser().glob(f"{name}*"), None) for f in FONT_FOLDERS)
+    """Ищет файл шрифта по имени семейства. У вариативных шрифтов файл называется
+    по семейству (Caveat[wght].ttf), а PostScript-имя добавляет Roman (CaveatRoman-Bold)."""
+    names = {name, re.sub(r"Roman$", "", name)}
+    return any(next(Path(f).expanduser().glob(f"{n}*"), None) for f in FONT_FOLDERS for n in names if n)
 
 
 def base_fonts(tokens):
