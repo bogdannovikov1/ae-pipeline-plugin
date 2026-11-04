@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 from approve_transcript import transcript_hash
+from plan_check import check as plan_check, plan_errors
 from settings import bases_dir, settings_for
 
 
@@ -95,7 +96,7 @@ def check_animation(path, timeline):
         errors.append("в плане нет битов")
     for number, beat in enumerate(beats):
         errors += word_errors(beat, len(data.get("words", [])), f"бит {number}")
-    return errors
+    return errors + plan_errors(plan)
 
 
 def resolve_path(value, folder):
@@ -154,6 +155,8 @@ def check_scene(path, settings=None):
             errors.append(f"{label}: не задано время")
         errors += word_errors(item, count, label)
         known.add(item.get("id") or f"{block}_{number}")
+    if not errors and (base / "tokens.json").is_file():
+        errors += plan_check(path, base)[0]
     return errors
 
 

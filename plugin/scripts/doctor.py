@@ -7,7 +7,8 @@ import shutil
 import sys
 from pathlib import Path
 
-from settings import bases_dir, load_settings
+from settings import PLUGIN_ROOT, bases_dir, load_settings
+from validate import ENGINE_VERSION
 
 FONT_FOLDERS = ["~/Library/Fonts", "/Library/Fonts"]
 
@@ -32,10 +33,14 @@ def main():
         (settings["ae"]["app"], Path("/Applications", settings["ae"]["app"]).is_dir(), "проверьте ae.app в настройках"),
         (f"база {base}", (base / "tokens.json").is_file(), "запустите /ae-video:setup или проверьте bases_dir и base в настройках"),
     ]
+    if (base / "base.json").is_file():
+        needed = json.loads((base / "base.json").read_text(encoding="utf-8")).get("engine", 1)
+        checks.append((f"движок плагина {ENGINE_VERSION} подходит базе (нужен {needed})", needed == ENGINE_VERSION, "запущена устаревшая копия плагина или база новее: обновите плагин"))
     if (base / "tokens.json").is_file():
         for font in base_fonts(json.loads((base / "tokens.json").read_text(encoding="utf-8"))):
             checks.append((f"шрифт {font}", has_font(font), "установите шрифт базы"))
 
+    print(f"Плагин: {PLUGIN_ROOT}")
     failed = 0
     for name, passed, fix in checks:
         print(f"{'ok ' if passed else 'НЕТ'} {name}" + ("" if passed else f": {fix}"))

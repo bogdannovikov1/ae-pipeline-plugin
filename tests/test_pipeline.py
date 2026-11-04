@@ -9,10 +9,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "plugin" / "scri
 from approve_transcript import transcript_hash
 from base_index import asset_lines, block_lines
 from base_scan import scan
+from brief import brief as brief_text, roles as brief_roles, write_agents_md
 from block_lab import LabError, create as create_lab, promote, set_values
 from capture import moments
 from extend_timeline import merge as merge_part
 from pipeline import Fragment, PipelineError
+from plan_check import check as plan_check, expected_targets, target_issues
 from settings import find_video, load_settings, merge, settings_for
 from sound_measure import trailing_start
 from sound_library import classify, hit_and_loudness, init as init_library, load_scheme, place_hits, propose
@@ -814,6 +816,115 @@ class SoundLibraryTest(unittest.TestCase):
         self.assertEqual(sounds["fallback"]["group"], "appear")
         self.assertNotIn("move", sounds["events"])
         self.assertIsNone(sounds["events"]["dim"])
+
+
+class PlanCheck(Case):
+    """Сцена сверяется с планом: утверждённые блоки не подменяются, target стоит раньше."""
+
+    def setUp(self):
+        super().setUp()
+        for name in ("fill_cells", "array_cells", "boxes"):
+            folder = self.bases / "b" / "blocks" / name
+            folder.mkdir(parents=True)
+            (folder / "block.jsxinc").write_text("")
+        (self.bases / "b" / "blocks" / "fill_cells" / "block.json").write_text(
+            json.dumps({"id": "fill_cells", "params": {"target": "id блока array_cells"}}))
+        self.write("F1.timeline.json", timeline())
+        self.write("F1.animation.json", {"transcript_hash": timeline()["transcript_hash"], "beats": [
+            {"id": "intro", "at_word": 0, "until_word": 1, "block": "array_cells"},
+            {"id": "scan", "at_word": 2, "until_word": 3, "blocks": ["fill_cells"]}]})
+
+    def items(self, *extra):
+        return [{"id": "cells", "block": "array_cells", "at_word": 0, "beat": "intro"}] + list(extra)
+
+    def test_old_scene_without_beats_only_warns(self):
+        path = self.write("F1.scene.json", self.scene())
+        self.assertEqual(check_scene(path, self.settings), [])
+        errors, warnings = plan_check(path, self.bases / "b")
+        self.assertEqual(errors, [])
+        self.assertIn("сверка с планом пропущена", warnings[0])
+
+    def test_substituted_block_is_error(self):
+        path = self.write("F1.scene.json", self.scene(items=self.items(
+            {"id": "mark", "block": "boxes", "at_word": 2, "beat": "scan"})))
+        errors = check_scene(path, self.settings)
+        self.assertTrue(any("нет утверждённого блока fill_cells" in e for e in errors))
+        self.assertTrue(any("boxes не указаны в плане" in w for w in plan_check(path, self.bases / "b")[1]))
+
+    def test_matching_scene_passes(self):
+        path = self.write("F1.scene.json", self.scene(items=self.items(
+            {"id": "fill", "block": "fill_cells", "at_word": 2, "beat": "scan", "params": {"target": "cells"}},
+            {"id": "bg", "block": "label", "always": True, "beat": "global"})))
+        self.assertEqual(check_scene(path, self.settings), [])
+        self.assertEqual(plan_check(path, self.bases / "b"), ([], []))
+
+    def test_unknown_beat_is_error(self):
+        path = self.write("F1.scene.json", self.scene(items=self.items(
+            {"id": "fill", "block": "fill_cells", "at_word": 2, "beat": "nope"})))
+        self.assertTrue(any("бит nope не найден" in e for e in check_scene(path, self.settings)))
+
+    def test_target_must_be_built_earlier(self):
+        items = [{"id": "fill", "block": "fill_cells", "at_word": 2, "params": {"target": "cells"}},
+                 {"id": "cells", "block": "array_cells", "at_word": 0}]
+        path = self.write("F1.scene.json", self.scene(items=items))
+        self.assertTrue(any("позже" in e for e in check_scene(path, self.settings)))
+        items[0]["params"]["target"] = "ghost"
+        path = self.write("F1.scene.json", self.scene(items=items))
+        self.assertTrue(any("такого элемента в сцене нет" in e for e in check_scene(path, self.settings)))
+
+    def test_target_of_wrong_block_warns(self):
+        items = [{"id": "row", "block": "boxes", "at_word": 0},
+                 {"id": "fill", "block": "fill_cells", "at_word": 2, "params": {"target": "row"}}]
+        path = self.write("F1.scene.json", self.scene(items=items))
+        self.assertEqual(target_issues({"items": items}, path.parent, self.bases / "b")[1],
+                         ["fill: блок fill_cells ждёт target блока array_cells, а row — boxes"])
+
+    def test_expected_targets_parse(self):
+        self.assertEqual(expected_targets("id блока array_cells"), ["array_cells"])
+        self.assertEqual(expected_targets("id блока plane, тогда точка в его единицах"), ["plane"])
+        self.assertEqual(expected_targets("id блока array_cells, bar_chart или другого с ячейками"), [])
+        self.assertEqual(expected_targets("id элемента"), [])
+
+    def test_plan_ids_unique_and_old_plan_valid(self):
+        plan = self.write("F1.animation.json", {"transcript_hash": timeline()["transcript_hash"], "beats": [
+            {"id": "x", "at_word": 0}, {"id": "x", "at_word": 1}]})
+        self.assertTrue(any("повторяется" in e for e in check_animation(plan, self.dir / "F1.timeline.json")))
+        plan = self.write("F1.animation.json", {"transcript_hash": timeline()["transcript_hash"], "beats": [
+            {"at_word": 0, "block": "label"}]})
+        self.assertEqual(check_animation(plan, self.dir / "F1.timeline.json"), [])
+
+
+class Brief(Case):
+    """Каждая роль получает полный контекст без переменных Claude Code."""
+
+    def test_every_role_resolves_paths(self):
+        agents, skills = brief_roles()
+        self.assertIn("animator", agents)
+        for role in agents + skills:
+            text = brief_text(role)
+            self.assertNotIn("${CLAUDE_PLUGIN_ROOT}", text, role)
+            self.assertIn("Жёсткие правила", text, role)
+
+    def test_agent_gets_preloaded_skills(self):
+        text = brief_text("animator")
+        self.assertIn("# Роль: animator", text)
+        self.assertIn("# Опора: навык montage-fundamentals", text)
+
+    def test_task_only_skips_role(self):
+        text = brief_text("animator", task="поправить звук", task_only=True)
+        self.assertNotIn("# Роль", text)
+        self.assertIn("поправить звук", text)
+
+    def test_agents_md_keeps_author_text(self):
+        path = self.video / "AGENTS.md"
+        path.write_text("# Моё\n\n- 30 fps\n")
+        write_agents_md(self.video, self.settings)
+        first = path.read_text()
+        self.assertTrue(first.startswith("# Моё"))
+        self.assertIn("brief.py make", first)
+        write_agents_md(self.video, self.settings)
+        self.assertEqual(path.read_text(), first)
+        self.assertIsNone(write_agents_md(self.video, merge(self.settings, {"agents_file": ""})))
 
 
 if __name__ == "__main__":

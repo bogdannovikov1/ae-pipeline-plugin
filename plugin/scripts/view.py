@@ -16,6 +16,7 @@ import re
 import sys
 from pathlib import Path
 
+from plan_check import check as plan_check
 from settings import settings_for
 from validate import read_json, resolve_base, resolve_path
 
@@ -190,12 +191,15 @@ def layout_warnings(layout, cfg):
 
 
 def scene_warnings(scene_path, settings):
-    """Все проверки собранной сцены одним списком: тайминг, звуки, раскладка."""
+    """Все проверки собранной сцены одним списком: план и target, тайминг, звуки, раскладка."""
     scene_path = Path(scene_path).resolve()
     scene = read_json(scene_path)
     data = read_json(resolve_path(scene["timeline"], scene_path.parent))
-    tokens = read_json(resolve_base(scene["base"], settings) / "tokens.json")
-    warnings = timing_warnings(scene, data, tokens, settings["timing"])
+    base = resolve_base(scene["base"], settings)
+    tokens = read_json(base / "tokens.json")
+    errors, plan_warnings = plan_check(scene_path, base)
+    warnings = [f"ошибка: {error}" for error in errors] + plan_warnings
+    warnings += timing_warnings(scene, data, tokens, settings["timing"])
     log = sound_log_path(scene_path)
     if log.is_file():
         warnings += sound_warnings(read_json(log)["sounds"], settings["timing"])

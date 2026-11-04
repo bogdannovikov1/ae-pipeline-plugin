@@ -290,6 +290,11 @@ def main():
         if args.command == "init":
             fragment.create(args.audio)
             result = fragment.next_action()
+            # Инструкция видео для любой модели: где плагин, база и как идти по этапам.
+            from brief import write_agents_md
+            agents = write_agents_md(fragment.video, fragment.settings)
+            if agents:
+                result["agents_file"] = str(agents)
         elif fragment.state is None:
             raise PipelineError(f"Фрагмент не начат, сначала init: {fragment.folder}")
         elif args.command == "status":

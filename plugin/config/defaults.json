@@ -3,6 +3,7 @@
   "base": "starter",
   "labs_dir": "~/Documents/ae-video/labs",
   "sound_library_dir": "~/Documents/ae-video/sound_library",
+  "agents_file": "AGENTS.md",
   "transcribe": {
     "model": "mlx-community/whisper-large-v3-turbo",
     "language": "ru",
