@@ -10,15 +10,15 @@ from approve_transcript import transcript_hash
 from base_index import asset_lines, block_lines
 from base_scan import scan
 from brief import brief as brief_text, env_lines as brief_env_lines, roles as brief_roles, write_agents_md
-from block_lab import LabError, create as create_lab, promote, set_values
+from block_lab import LabError, create as create_lab, lab_scenes, part as lab_part, promote, set_values, variant
 from capture import moments
 from extend_timeline import merge as merge_part
 from pipeline import Fragment, PipelineError
-from plan_check import check as plan_check, expected_targets, target_issues
+from plan_check import check as plan_check, coverage, expected_targets, target_issues
 from settings import find_video, load_settings, merge, settings_for
 from sound_measure import trailing_start
 from sound_library import classify, hit_and_loudness, init as init_library, load_scheme, place_hits, propose
-from view import layout_warnings, scene_warnings, sound_log_path, sound_warnings, review_lines, scene_lines, text_lines, timing_warnings
+from view import beat_lines, layout_warnings, motion_warnings, state_lines, weight_warnings, scene_warnings, sound_log_path, sound_warnings, review_lines, scene_lines, text_lines, timing_warnings
 from setup_base import STARTER, create_base
 from validate import ENGINE_VERSION, check_built, file_hash
 from validate import check_animation, check_scene, check_timeline
@@ -45,7 +45,8 @@ class Case(unittest.TestCase):
         (block / "block.jsxinc").write_text("")
         (self.bases / "b" / "tokens.json").write_text("{}")
         (self.bases / "b" / "base.json").write_text(json.dumps({"engine": ENGINE_VERSION}))
-        self.settings = merge(load_settings(user_path=self.root / "none"), {"bases_dir": str(self.bases), "base": "b"})
+        self.settings = merge(load_settings(user_path=self.root / "none"), {"bases_dir": str(self.bases), "base": "b",
+                                                                        "code_review": {"enabled": False}})
         self.write("F1.wav", "audio")
 
     def write(self, name, value):
@@ -132,6 +133,120 @@ class Check(Case):
              "left": 0, "top": 200, "right": 300, "bottom": 300}]})
         warnings = scene_warnings(path, self.settings)
         self.assertEqual(len(warnings), 3)
+
+
+class CodeReview(Case):
+    def to_check(self):
+        self.settings["code_review"]["enabled"] = True
+        f = self.to_preflight_ready()
+        self.assertEqual(f.next_action()["stage"], "check")
+        f.start("check")
+        return f
+
+    def to_preflight_ready(self):
+        f = self.fragment()
+        f.start("transcript")
+        self.write("F1.timeline.json", timeline())
+        f.done("transcript")
+        f.approve("transcript")
+        f.start("plan")
+        self.write("F1.animation.json", {"transcript_hash": timeline()["transcript_hash"], "beats": [{"at_word": 0}]})
+        f.done("plan")
+        f.approve("plan")
+        f.start("build")
+        self.write_scene(self.scene())
+        f.done("build")
+        return f
+
+    def check_report(self, *findings):
+        self.write("reviews/F1.check.json", {"summary": "s", "findings": list(findings)})
+
+    def test_disabled_is_skipped_by_itself(self):
+        f = self.to_preflight_ready()
+        self.assertEqual(f.next_action()["stage"], "preflight")
+        self.assertTrue(f.state["stages"]["check"].get("skipped"))
+
+    def test_short_fragment_is_skipped(self):
+        self.settings["code_review"].update(enabled=True, min_seconds=600)
+        f = self.to_preflight_ready()
+        self.assertEqual(f.next_action()["stage"], "preflight")
+
+    def test_clean_report_closes_stage(self):
+        f = self.to_check()
+        self.check_report({"beat": "b1", "severity": "minor", "what": "w", "fix": "x"})
+        self.assertEqual(f.done("check")["decision"], "clean")
+        self.assertEqual(f.next_action()["stage"], "preflight")
+
+    def test_fix_then_finish_without_second_review(self):
+        f = self.to_check()
+        finding = {"item": "a", "severity": "critical", "what": "w", "fix": "x"}
+        self.check_report(finding)
+        self.assertEqual(f.done("check"), {"decision": "fix", "findings": [finding]})
+        self.assertEqual(f.status("check"), "running")
+        self.write("F1.scene.json", self.scene(tail=2))
+        with self.assertRaises(PipelineError):
+            f.finish("check")
+        self.write_scene(self.scene(tail=2))
+        f.finish("check")
+        self.assertEqual((f.status("build"), f.status("check")), ("approved", "approved"))
+        self.assertEqual(f.next_action()["stage"], "preflight")
+
+    def test_bad_report_is_refused(self):
+        f = self.to_check()
+        self.check_report({"severity": "big", "what": "w"})
+        with self.assertRaises(PipelineError):
+            f.done("check")
+
+    def test_beats_dossier_puts_plan_text_and_items_together(self):
+        self.write("F1.timeline.json", timeline())
+        self.write("F1.animation.json", {"beats": [{"id": "s", "at_word": 0, "until_word": 1, "intent": "старт", "blocks": ["label"]}]})
+        scene = self.scene(items=[{"id": "a", "beat": "s", "block": "label", "at_word": 0, "params": {"text": "hi"}},
+                                  {"id": "bg", "beat": "global", "block": "label", "always": True}])
+        plan = json.loads((self.dir / "F1.animation.json").read_text())
+        out = "\n".join(beat_lines(scene, plan, timeline()))
+        self.assertIn("== s слова 0-1 | блоки: label", out)
+        self.assertIn("замысел: старт", out)
+        self.assertIn('{"text":"hi"}', out)
+        self.assertIn("== общие и без бита", out)
+
+
+class SceneViews(Case):
+    def test_object_in_several_beats_counts_for_each(self):
+        plan = {"beats": [{"id": "s", "blocks": ["table"]}, {"id": "i", "blocks": ["table"]}]}
+        scene = {"items": [{"id": "t", "block": "table", "beat": ["s", "i"]}]}
+        self.assertEqual(coverage(scene, plan)[0], [])
+        scene["items"][0]["beat"] = ["s", "x"]
+        self.assertTrue(any("x" in e for e in coverage(scene, plan)[0]))
+
+    def test_state_shows_objects_alive_at_word_and_bottom_band(self):
+        scene = {"items": [{"id": "a", "block": "label", "at_word": 0, "until_word": 1},
+                           {"id": "b", "block": "label", "at_word": 2},
+                           {"id": "bg", "block": "background_dark", "always": True}]}
+        layout = {"width": 1920, "height": 1080, "boxes": [
+            {"item": "b", "layer": "x", "time": 1.0, "until": 9, "opacity": 100, "left": 10, "top": 900, "right": 50, "bottom": 950}]}
+        out = "\n".join(state_lines(scene, timeline(), layout, 3))
+        self.assertNotIn("  a label", out)
+        self.assertIn("b label [2–конца] рамка 10,900–50,950", out)
+        self.assertIn("нижняя полоса: занята (b)", out)
+
+    def test_motion_glitches_from_tracks(self):
+        scene = {"comp": {"fps": 30}, "items": [{"id": "a", "block": "label", "at_word": 2, "until_word": 2}]}
+        f = 1 / 30
+        samples = [[0.0, 100, 900, 500, 1000, 550], [0.5, 100, 900, 500, 1000, 550], [0.5 + f, 100, 1300, 500, 1400, 550],
+                   [1.0, 100, 1300, 500, 1400, 550], [1.0 + f, 10, 1300, 500, 1400, 550], [4.0, 30, 1300, 500, 1400, 550]]
+        layout = {"width": 1920, "height": 1080, "boxes": [],
+                  "tracks": [{"item": "a", "layer": "t", "text": True, "in": 0, "out": 5, "samples": samples}]}
+        out = "\n".join(motion_warnings(layout, scene, timeline(), self.settings))
+        for word in ("раньше", "висит", "скачок", "прыгает", "застрял"):
+            self.assertIn(word, out)
+        layout["tracks"][0]["samples"] = [[1.0, 100, 900, 500, 1000, 550], [1.3, 100, 900, 500, 1000, 550]]
+        self.assertEqual(motion_warnings(layout, scene, timeline(), self.settings), [])
+
+    def test_heavy_composition_warns(self):
+        boxes = [{"item": f"i{n}", "layer": "l"} for n in range(100)]
+        data = {"words": [{"end": 60}]}
+        self.assertEqual(weight_warnings({"boxes": boxes[:50]}, data, {"max_layers_per_minute": 80}), [])
+        self.assertTrue(weight_warnings({"boxes": boxes}, data, {"max_layers_per_minute": 80}))
 
 
 class Settings(Case):
@@ -564,6 +679,32 @@ class Lab(Case):
         self.assertEqual(item["tokens"], {"motion": {"lead": 0.2}})
         with self.assertRaises(LabError):
             set_values(self.settings, "pop", ["size=1"])
+
+    def test_parts_build_instead_of_the_big_scene(self):
+        folder = create_lab(self.settings, "pop")
+        target = lab_part(self.settings, "pop", "styles", seconds=3)
+        scene = json.loads((target / "lab.scene.json").read_text())
+        self.assertEqual(scene["comp"]["name"], "lab_pop_styles")
+        self.assertTrue((target / "blocks").is_symlink())
+        self.assertEqual(check_scene(target / "lab.scene.json", self.settings), [])
+        lab_part(self.settings, "pop", "speed")
+        self.assertEqual([s.parent.name for s in lab_scenes(folder)], ["speed", "styles"])
+        self.assertEqual([s.parent.name for s in lab_scenes(folder, ("styles",))], ["styles"])
+        with self.assertRaises(LabError):
+            lab_scenes(folder, ("nope",))
+
+    def test_variant_is_a_scene_with_its_own_comp(self):
+        folder = create_lab(self.settings, "pop")
+        set_values(self.settings, "pop", ["params.size=120"])
+        path, _ = variant(self.settings, "pop", "big", ["params.size=200"])
+        scene = json.loads(path.read_text())
+        self.assertEqual(scene["items"][-1]["params"], {"size": 200})
+        self.assertEqual(scene["comp"]["name"], "lab_pop_big")
+        self.assertEqual(check_scene(path, self.settings), [])
+        self.assertEqual(json.loads((folder / "lab.scene.json").read_text())["items"][-1]["params"], {"size": 120})
+        self.assertEqual([p.name for p in lab_scenes(folder)], ["lab.scene.json", "variant_big.scene.json"])
+        with self.assertRaises(LabError):
+            variant(self.settings, "pop", "../x", [])
 
     def test_promote_needs_description_and_consent_to_replace(self):
         folder = create_lab(self.settings, "pop")

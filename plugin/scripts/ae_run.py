@@ -116,6 +116,18 @@ def run_jsx(script, globals_, settings, extra_autosave=()):
     return outcome
 
 
+def build_values(scene_path, settings, append_from=None):
+    """Глобальные переменные сборки: сцена, база и настройки, которые движок применяет сам."""
+    values = {
+        "SCENE_PATH": Path(scene_path).resolve(),
+        "BASES_DIR": bases_dir(settings),
+        "KEEP_BUILDS": settings["ae"].get("keep_builds", 1),
+    }
+    if append_from is not None:
+        values["APPEND_FROM"] = append_from
+    return values
+
+
 def export_layout(scene_path, settings):
     """Выгружает положение слоёв из AE. Результат читает view.py layout."""
     scene = read_json(scene_path)
@@ -124,6 +136,7 @@ def export_layout(scene_path, settings):
         "comp": scene["comp"]["name"],
         "out": str(layout_path(scene_path)),
         "settle": settings["layout"]["settle"],
+        "full_frame": settings["layout"]["full_frame"],
         "starts": journal["starts"],
     }
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as file:
@@ -144,10 +157,7 @@ def main():
     settings = load_settings(args.video) if args.video else settings_for(args.path)
     try:
         if args.command == "build":
-            values = {"SCENE_PATH": args.path.resolve(), "BASES_DIR": bases_dir(settings)}
-            if args.append_from is not None:
-                values["APPEND_FROM"] = args.append_from
-            run_jsx(BUILD_SCRIPT, values, settings)
+            run_jsx(BUILD_SCRIPT, build_values(args.path, settings, args.append_from), settings)
             stamp = {"scene_hash": file_hash(args.path), "built_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
             build_stamp_path(args.path).write_text(json.dumps(stamp, indent=2), encoding="utf-8")
             export_layout(args.path.resolve(), settings)

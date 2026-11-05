@@ -154,4 +154,168 @@ E.starts = { a: 3 };
 assert.strictEqual(E.time({ at_word: 1 }), 1.9, "опережение слова");
 assert.strictEqual(E.time({ after: "a", delay: 0.5 }), 3.5);
 assert.strictEqual(E.time({ at: 4 }), 4);
+
+// Пометки уходят вместе с целью.
+global.CameraLayer = function () {};
+global.LightLayer = function () {};
+function fakeLayer(id, inPoint, outPoint, extra) {
+    const keys = [];
+    return Object.assign({
+        comment: "scene:" + id, hasVideo: true, nullLayer: false, inPoint, outPoint, keys,
+        opacity: { setValueAtTime: (t, v) => keys.push([t, v]), valueAtTime: () => 100 },
+    }, extra || {});
+}
+const cells = fakeLayer("cells", 0, 6);
+const mark = fakeLayer("mark", 2, 10);
+const early = fakeLayer("short", 2, 4);
+const rig = fakeLayer("rig", 2, 10, { nullLayer: true });
+const onMark = fakeLayer("pointer", 3, 10);
+const free = fakeLayer("free", 1, 10);
+const sound = fakeLayer("mark", 2, 10, { hasVideo: false });
+E.comp = { duration: 10, frameDuration: 1 / 30, numLayers: 0, layer: (n) => all[n - 1] };
+const all = [cells, mark, early, rig, onMark, free, sound];
+E.comp.numLayers = all.length;
+E.tokens.motion.exit_duration = 0.2;
+E.ends = {};
+E.starts = { cells: 0, mark: 2, short: 2, rig: 2, pointer: 3, free: 1 };
+assert.deepStrictEqual(E.targetsOf({ params: { target: "cells" } }), ["cells"]);
+assert.deepStrictEqual(E.targetsOf({ params: { target: [10, 20] } }), [], "точка вместо id не цель");
+assert.deepStrictEqual(E.targetsOf({ params: { targets: ["cells", "nope"] } }), ["cells"]);
+E.endWithTargets([
+    { id: "mark", targets: ["cells"], layers: [mark, sound] },
+    { id: "short", targets: ["cells"], layers: [early] },
+    { id: "rig", targets: ["cells"], layers: [rig] },
+    { id: "pointer", targets: ["mark"], layers: [onMark] },
+    { id: "free", targets: ["background"], layers: [free] },
+]);
+assert.strictEqual(mark.outPoint, 6, "пометка обрезана по концу цели");
+assert.deepStrictEqual(mark.keys, [[5.8, 100], [6, 0]], "и уходит тем же затуханием");
+assert.strictEqual(sound.outPoint, 10, "звук не обрезается");
+assert.strictEqual(early.outPoint, 4, "свой более ранний конец остаётся");
+assert.ok(rig.outPoint === 6 && rig.keys.length === 0, "нуль обрезается без затухания");
+assert.strictEqual(onMark.outPoint, 6, "пометка на пометке уходит с первой целью");
+assert.strictEqual(free.outPoint, 10, "цель до конца ролика: ничего не меняется");
+E.ends = { cells: 3 };
+const after = fakeLayer("late", 4, 10);
+E.endWithTargets([{ id: "late", targets: ["cells"], layers: [after] }]);
+assert.strictEqual(after.outPoint, 10, "слой, родившийся после ухода цели, не трогаем");
+const exitMark = fakeLayer("m2", 1, 10);
+E.endWithTargets([{ id: "m2", targets: ["cells"], layers: [exitMark] }]);
+assert.strictEqual(exitMark.outPoint, 3, "уход, о котором сообщил блок, тоже конец цели");
+E.ends = {};
+
+// Родитель до позиции: позиция ставится в координатах родителя.
+function posLayer(value, anchor, threeD) {
+    const layer = { threeDLayer: !!threeD, parent: null,
+        position: { value, setValue(v) { this.value = v; } }, anchorPoint: { value: anchor || [0, 0] } };
+    layer.setParentWithJump = (p) => { layer.parent = p; };
+    return layer;
+}
+const parent = posLayer([500, 300], [10, 20]);
+const child = posLayer([560, 340]);
+E.attach(child, parent);
+assert.strictEqual(child.parent, parent);
+assert.deepStrictEqual(child.position.value, [70, 60], "позиция в пространстве родителя от его якоря");
+const deep = posLayer([0, 0, -2], null, true);
+E.attach(deep, parent, [5, 6]);
+assert.deepStrictEqual(deep.position.value, [5, 6, -2], "смещение задано явно, глубина сохраняется");
+
+
+// Дополнение поверх замороженной части: ссылки store на слои повторной сборки меняются на настоящие.
+global.AVLayer = function () {};
+global.ShapeLayer = function () {};
+global.TextLayer = function () {};
+global.Property = function () {};
+global.PropertyGroup = function () {};
+global.MaskPropertyGroup = function () {};
+global.PropertyType = { PROPERTY: 1, NAMED_GROUP: 2 };
+global.PropertyValueType = { NO_VALUE: 0, CUSTOM_VALUE: 9, OneD: 1 };
+global.KeyframeInterpolationType = { LINEAR: 1, BEZIER: 2, HOLD: 3 };
+function aeLayer(id, name) {
+    const layer = Object.create(AVLayer.prototype);
+    Object.assign(layer, { id, name, propertyDepth: 0, matchName: "ADBE AV Layer", props: [] });
+    layer.numProperties = 0;
+    layer.property = (i) => layer.props[i - 1];
+    return layer;
+}
+function aeProp(layer, index, match, name, value) {
+    const prop = Object.create(Property.prototype);
+    Object.assign(prop, {
+        propertyDepth: 1, propertyIndex: index, matchName: match, name, parentProperty: layer, value,
+        propertyType: PropertyType.PROPERTY, propertyValueType: PropertyValueType.OneD,
+        canVaryOverTime: true, canSetExpression: true, expression: "", keys: [],
+    });
+    prop.propertyGroup = () => layer;
+    Object.defineProperty(prop, "numKeys", { get: () => prop.keys.length });
+    prop.keyTime = (k) => prop.keys[k - 1].t;
+    prop.removeKey = (k) => { prop.keys.splice(k - 1, 1); };
+    prop.setValueAtTime = (t, v) => {
+        const at = prop.keys.findIndex((key) => Math.abs(key.t - t) < 1e-9);
+        if (at >= 0) { prop.keys[at].v = v; return; }
+        prop.keys.push({ t, v, out: KeyframeInterpolationType.BEZIER });
+        prop.keys.sort((x, y) => x.t - y.t);
+    };
+    prop.nearestKeyIndex = (t) => {
+        let best = 1;
+        prop.keys.forEach((key, i) => { if (Math.abs(key.t - t) < Math.abs(prop.keys[best - 1].t - t)) best = i + 1; });
+        return best;
+    };
+    prop.keyInInterpolationType = (k) => KeyframeInterpolationType.BEZIER;
+    prop.setInterpolationTypeAtKey = (k, i, o) => { prop.keys[k - 1].out = o; };
+    layer.props[index - 1] = prop;
+    layer.numProperties = layer.props.length;
+    return prop;
+}
+const tempComp = { name: "temp" };
+const realComp = { name: "real" };
+const tempCell = aeLayer(101, "cell 0");
+const tempGone = aeLayer(102, "cell 1");
+const tempInk = aeProp(tempCell, 1, "ADBE Fill-0002", "Color", 0);
+const realCell = aeLayer(7, "cell 0 (renamed)");
+const realInk = aeProp(realCell, 1, "ADBE Fill-0002", "Color", 0);
+function TextDocument() { this.text = "a"; }
+const doc = new TextDocument();
+const store = { cells: [tempCell, tempGone], parts: [{ ink: tempInk }], comp: tempComp, x: 960, other: { cells: null }, doc };
+store.self = store;
+const missing = [];
+E.remap(store, { 101: realCell, 102: null }, tempComp, realComp, missing);
+assert.strictEqual(store.cells[0], realCell, "слой повторной сборки заменён настоящим по id");
+assert.strictEqual(store.parts[0].ink, realInk, "свойство найдено по пути от слоя");
+assert.strictEqual(store.comp, realComp, "композиция тоже");
+assert.strictEqual(store.cells[1], null, "удалённый автором слой: null");
+assert.deepStrictEqual(missing, ["cell 1"], "и его имя в списке потерь");
+assert.strictEqual(store.x, 960);
+assert.strictEqual(store.doc, doc, "объекты AE не обходятся");
+
+// Заморозка: ключи до стыка не появляются, кадры до стыка остаются прежними.
+const frozenLayer = aeLayer(9, "box");
+Object.assign(frozenLayer, { inPoint: 0, outPoint: 20 });
+const still = aeProp(frozenLayer, 1, "ADBE Position", "Position", 500);
+const keyed = aeProp(frozenLayer, 2, "ADBE Opacity", "Opacity", 0);
+keyed.setValueAtTime(1, 0);
+keyed.setValueAtTime(2, 100);
+const later = aeProp(frozenLayer, 3, "ADBE Scale", "Scale", 100);
+const expr = aeProp(frozenLayer, 4, "ADBE Rotate Z", "Rotation", 0);
+const snap = E.freezeSnapshot([frozenLayer]);
+// Новая часть со стыком в 10 с: блок ставит ключи и до стыка, и после.
+still.setValueAtTime(9.99, 700);
+still.setValueAtTime(10, 700);
+still.setValueAtTime(11, 900);
+keyed.setValueAtTime(10.5, 0);
+later.setValueAtTime(12, 50);
+later.setValueAtTime(13, 100);
+expr.expression = "wiggle(1, 5)";
+frozenLayer.inPoint = 3;
+const fixes = E.freezeFix(snap, 10);
+assert.ok(still.keys.every((k) => k.t >= 10 - 0.0011), "ключей до стыка нет");
+assert.ok(still.keys[0].v === 500 && still.keys[0].out === KeyframeInterpolationType.HOLD && still.keys[0].t < 10,
+    "неподвижное свойство держит старое значение до новых ключей");
+assert.deepStrictEqual(still.keys.slice(1).map((k) => [k.t, k.v]), [[10, 700], [11, 900]], "новая анимация с места стыка");
+assert.strictEqual(keyed.keys[1].out, KeyframeInterpolationType.HOLD, "старый последний ключ держится до новых");
+assert.ok(later.keys[0].t === 10 && later.keys[0].v === 100 && later.keys[0].out === KeyframeInterpolationType.HOLD,
+    "ключи только после стыка: значение до них прежнее");
+assert.ok(/^if \(time < 10\) \{\nvalue\n\} else \{\nwiggle/.test(expr.expression), "новое выражение работает со стыка");
+assert.strictEqual(frozenLayer.inPoint, 0, "начало слоя прежнее");
+assert.ok(fixes.length >= 5);
+
 console.log("Движок в порядке");

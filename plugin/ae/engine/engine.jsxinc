@@ -1,7 +1,7 @@
 // Scene engine: shared helpers for animation blocks. Blocks live in the base folder.
 
 $.global.Engine = (function () {
-    var E = { blocks: {}, store: {}, starts: {}, footage: {}, soundLog: [], soundCalls: {}, current: "", tokens: null, assets: [], comp: null, base: "", timeline: null };
+    var E = { blocks: {}, store: {}, starts: {}, footage: {}, soundLog: [], soundCalls: {}, ends: {}, seam: null, current: "", tokens: null, assets: [], comp: null, base: "", timeline: null };
 
     // Returns a copy of base with patch applied over it: one item can restyle anything.
     E.overlay = function (base, patch) {
@@ -61,22 +61,34 @@ $.global.Engine = (function () {
         return prop.propertyValueType === PropertyValueType.TwoD ? 2 : 1;
     }
 
-    E.smooth = function (prop) {
+    function easeSide(prop) {
         var ease = new KeyframeEase(0, E.tokens.motion.ease_influence);
         var side = [];
         for (var n = 0; n < easeSize(prop); n++) {
             side.push(ease);
         }
+        return side;
+    }
+
+    // Eases the keys of a property; after a seam (append over a frozen part) only the keys from the seam on.
+    E.smooth = function (prop) {
+        var side = easeSide(prop);
         for (var k = 1; k <= prop.numKeys; k++) {
-            prop.setTemporalEaseAtKey(k, side, side);
+            if (E.seam === null || E.seam === undefined || prop.keyTime(k) >= E.seam - 1e-4) {
+                prop.setTemporalEaseAtKey(k, side, side);
+            }
         }
     };
 
+    // Sets keys and eases only them: keys the property already had keep their curves.
     E.keys = function (prop, times, values) {
         for (var i = 0; i < times.length; i++) {
             prop.setValueAtTime(times[i], values[i]);
         }
-        E.smooth(prop);
+        var side = easeSide(prop);
+        for (var j = 0; j < times.length; j++) {
+            prop.setTemporalEaseAtKey(prop.nearestKeyIndex(times[j]), side, side);
+        }
     };
 
     // One continuous spring: a fast launch, a single small overshoot and a soft settle.
@@ -152,6 +164,96 @@ $.global.Engine = (function () {
         var position = layer.position.value;
         layer.threeDLayer = true;
         layer.position.setValue([position[0], position[1], z]);
+    };
+
+    // Parent first, then the position in the parent's space. Assigning parent after a comp position lets AE
+    // convert it through the parent's state at the comp's current time: a scaled or keyed parent shifts the child.
+    // offset is the child's position in the parent's layer space; without it the child keeps its comp position
+    // relative to the parent at rest (scale 100, no rotation). A 3D child keeps its depth.
+    function rest(prop) {
+        return prop.valueAtTime ? prop.valueAtTime(0, true) : prop.value;
+    }
+
+    E.attach = function (child, parent, offset) {
+        var own = rest(child.position);
+        if (!offset) {
+            var p = rest(parent.position);
+            var a = rest(parent.anchorPoint);
+            offset = [own[0] - p[0] + a[0], own[1] - p[1] + a[1]];
+        }
+        child.setParentWithJump(parent);
+        var z = offset.length > 2 ? offset[2] : (own.length > 2 ? own[2] : 0);
+        child.position.setValue(child.threeDLayer ? [offset[0], offset[1], z] : [offset[0], offset[1]]);
+        return child;
+    };
+
+    // A block reports that an item left the screen at time (an exit animation): marks on it go with it.
+    E.ended = function (id, time) {
+        E.ends[id] = time;
+    };
+
+    // The ids an item points at through target or targets, among the items built so far.
+    E.targetsOf = function (item) {
+        var params = item.params || {};
+        var list = params.targets instanceof Array ? params.targets : [params.target];
+        var ids = [];
+        for (var i = 0; i < list.length; i++) {
+            if (typeof list[i] === "string" && E.starts[list[i]] !== undefined) {
+                ids.push(list[i]);
+            }
+        }
+        return ids;
+    };
+
+    // When an item left the screen: an exit reported by a block, else the last outPoint of its layers.
+    // null: it stays to the end of the composition.
+    E.endOf = function (id) {
+        if (E.ends[id] !== undefined) {
+            return E.ends[id];
+        }
+        var comp = E.comp;
+        var last = null;
+        for (var n = 1; n <= comp.numLayers; n++) {
+            var layer = comp.layer(n);
+            if (layer.hasVideo && layer.comment === "scene:" + id) {
+                last = last === null ? layer.outPoint : Math.max(last, layer.outPoint);
+            }
+        }
+        return last === null || last >= comp.duration - comp.frameDuration / 2 ? null : last;
+    };
+
+    // A mark on a target (a highlight, a pointer, a frame) does not outlive it: its layers fade out with the
+    // target unless they end earlier. Items go in scene order, so a mark on a mark ends with the first one.
+    E.endWithTargets = function (built) {
+        var fade = E.tokens.motion.exit_duration;
+        for (var i = 0; i < built.length; i++) {
+            var b = built[i];
+            var end = null;
+            for (var k = 0; k < b.targets.length; k++) {
+                var e = E.endOf(b.targets[k]);
+                if (e === null) {
+                    end = null;
+                    break;
+                }
+                end = end === null ? e : Math.max(end, e);
+            }
+            if (end === null) {
+                continue;
+            }
+            for (var n = 0; n < b.layers.length; n++) {
+                var layer = b.layers[n];
+                // Sounds, cameras and lights are not marks; a layer born after the end cannot be cut.
+                if (!layer.hasVideo || layer instanceof CameraLayer || layer instanceof LightLayer ||
+                    layer.outPoint <= end + 1e-4 || layer.inPoint >= end - 1e-4) {
+                    continue;
+                }
+                if (layer.nullLayer) {
+                    layer.outPoint = end;
+                } else {
+                    E.fadeOut(layer, end, Math.min(fade, end - layer.inPoint));
+                }
+            }
+        }
     };
 
     E.rectFill = function (layer) {
@@ -383,6 +485,7 @@ $.global.Engine = (function () {
         E.soundLog.push({
             item: E.current,
             sound: id,
+            level: round(level),
             event: entry.event,
             start: round(start),
             end: round(start + audible),
@@ -506,6 +609,245 @@ $.global.Engine = (function () {
             layers.push(playBed(config.bed, entry));
         }
         return layers;
+    };
+
+    // ---- Append over a frozen part. Layers are known by their persistent AE id.
+    E.layerIds = function (comp) {
+        var ids = {};
+        for (var n = 1; n <= comp.numLayers; n++) {
+            ids[comp.layer(n).id] = true;
+        }
+        return ids;
+    };
+
+    // Layers created since before (a set from layerIds), in the order they were made.
+    E.newLayers = function (comp, before) {
+        var fresh = [];
+        for (var n = 1; n <= comp.numLayers; n++) {
+            var layer = comp.layer(n);
+            if (!before[layer.id]) {
+                fresh.push(layer);
+            }
+        }
+        fresh.sort(function (a, b) { return a.id - b.id; });
+        return fresh;
+    };
+
+    function isLayer(value) {
+        return value instanceof AVLayer || value instanceof ShapeLayer || value instanceof TextLayer ||
+            value instanceof CameraLayer || value instanceof LightLayer;
+    }
+
+    function isProperty(value) {
+        return value instanceof Property || value instanceof PropertyGroup || value instanceof MaskPropertyGroup;
+    }
+
+    // Only plain data of a block is walked: AE objects (footage, text documents, shapes) are left as they are.
+    function isPlain(value) {
+        return value instanceof Array || value.constructor === Object;
+    }
+
+    // Indices from the layer down to a property, with match names to check them on another layer.
+    E.propertyPath = function (prop) {
+        var path = [];
+        for (var p = prop; p.propertyDepth > 0; p = p.parentProperty) {
+            path.unshift({ index: p.propertyIndex, match: p.matchName });
+        }
+        return { layer: prop.propertyGroup(prop.propertyDepth), path: path };
+    };
+
+    E.resolvePath = function (layer, path) {
+        var p = layer;
+        for (var i = 0; p && i < path.length; i++) {
+            p = path[i].index <= p.numProperties ? p.property(path[i].index) : null;
+            if (p && p.matchName !== path[i].match) {
+                p = null;
+            }
+        }
+        return p;
+    };
+
+    // Swaps layers, properties and the comp of a replay for the real ones inside a block's store.
+    // map: replay layer id -> real layer, or null when the author deleted it (its name goes to missing).
+    E.remap = function (value, map, temp, real, missing, seen) {
+        seen = seen || [];
+        if (value === null || typeof value !== "object") {
+            return value;
+        }
+        if (value === temp) {
+            return real;
+        }
+        if (isLayer(value)) {
+            if (!map.hasOwnProperty(value.id)) {
+                return value;
+            }
+            if (map[value.id] === null) {
+                missing.push(value.name);
+            }
+            return map[value.id];
+        }
+        if (isProperty(value)) {
+            var where;
+            try {
+                where = E.propertyPath(value);
+            } catch (e) {
+                missing.push("?");
+                return null;
+            }
+            if (!map.hasOwnProperty(where.layer.id)) {
+                return value;
+            }
+            var owner = map[where.layer.id];
+            var found = owner ? E.resolvePath(owner, where.path) : null;
+            if (!found) {
+                missing.push(where.layer.name + " / " + value.name);
+            }
+            return found;
+        }
+        if (!isPlain(value)) {
+            return value;
+        }
+        for (var s = 0; s < seen.length; s++) {
+            if (seen[s] === value) {
+                return value;
+            }
+        }
+        seen.push(value);
+        if (value instanceof Array) {
+            for (var i = 0; i < value.length; i++) {
+                value[i] = E.remap(value[i], map, temp, real, missing, seen);
+            }
+            return value;
+        }
+        for (var key in value) {
+            if (value.hasOwnProperty(key) && typeof value[key] !== "function") {
+                value[key] = E.remap(value[key], map, temp, real, missing, seen);
+            }
+        }
+        return value;
+    };
+
+    function leafProperties(group, out) {
+        for (var n = 1; n <= group.numProperties; n++) {
+            var p = group.property(n);
+            if (p.matchName === "ADBE Marker") {
+                continue;
+            }
+            if (p.propertyType === PropertyType.PROPERTY) {
+                if (p.canVaryOverTime && p.propertyValueType !== PropertyValueType.NO_VALUE &&
+                    p.propertyValueType !== PropertyValueType.CUSTOM_VALUE) {
+                    out.push(p);
+                }
+            } else {
+                leafProperties(p, out);
+            }
+        }
+        return out;
+    }
+
+    // What the frozen layers look like before the new part: per property its keys, expression and still value.
+    E.freezeSnapshot = function (layers) {
+        var snap = [];
+        for (var i = 0; i < layers.length; i++) {
+            var layer = layers[i];
+            var entry = { layer: layer, id: layer.id, name: layer.name, inPoint: layer.inPoint, outPoint: layer.outPoint, props: [] };
+            var props = leafProperties(layer, []);
+            for (var n = 0; n < props.length; n++) {
+                var p = props[n];
+                var keys = [];
+                for (var k = 1; k <= p.numKeys; k++) {
+                    keys.push(p.keyTime(k));
+                }
+                entry.props.push({ path: E.propertyPath(p).path, name: p.name, keys: keys,
+                    expression: p.canSetExpression ? p.expression : "", value: keys.length ? null : p.value });
+            }
+            snap.push(entry);
+        }
+        return snap;
+    };
+
+    function hasTime(list, t) {
+        for (var i = 0; i < list.length; i++) {
+            if (Math.abs(list[i] - t) < 1e-4) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Frames before the seam stay exactly as they were: new keys before it go, a still property that got keys
+    // holds its old value up to the seam, an old last key holds until the new ones, a new expression starts at
+    // the seam, the layer keeps its old in and out before the seam. Returns what had to be fixed.
+    E.freezeFix = function (snap, seam) {
+        var fixes = [];
+        for (var i = 0; i < snap.length; i++) {
+            var entry = snap[i];
+            var layer = entry.layer;
+            if (Math.abs(layer.inPoint - entry.inPoint) > 1e-4) {
+                layer.inPoint = entry.inPoint;
+                fixes.push({ layer: entry.name, property: "inPoint", fix: "restored" });
+            }
+            if (layer.outPoint < seam - 1e-4 && Math.abs(layer.outPoint - entry.outPoint) > 1e-4) {
+                layer.outPoint = Math.min(entry.outPoint, seam);
+                fixes.push({ layer: entry.name, property: "outPoint", fix: "restored" });
+            }
+            for (var n = 0; n < entry.props.length; n++) {
+                var old = entry.props[n];
+                var p = E.resolvePath(layer, old.path);
+                if (!p) {
+                    continue;
+                }
+                var expression = p.canSetExpression ? p.expression : "";
+                if (expression !== old.expression) {
+                    p.expression = "if (time < " + seam + ") {\n" + (old.expression || "value") + "\n} else {\n" + expression + "\n}";
+                    fixes.push({ layer: entry.name, property: old.name, fix: "expression from the seam" });
+                }
+                if (p.numKeys === old.keys.length) {
+                    continue;
+                }
+                var removed = 0;
+                for (var k = p.numKeys; k >= 1; k--) {
+                    var t = p.keyTime(k);
+                    if (t < seam - 1e-4 && !hasTime(old.keys, t)) {
+                        p.removeKey(k);
+                        removed += 1;
+                    }
+                }
+                if (removed) {
+                    fixes.push({ layer: entry.name, property: old.name, fix: "removed " + removed + " keys before the seam" });
+                }
+                if (!p.numKeys || p.numKeys === old.keys.length) {
+                    continue;
+                }
+                var before = 0;
+                for (var b = 1; b <= p.numKeys; b++) {
+                    if (p.keyTime(b) < seam - 1e-4) {
+                        before = b;
+                    }
+                }
+                if (!old.keys.length) {
+                    // A still property: its old value up to the seam, then the new animation.
+                    // A held key with the old value just before the new ones: frames before stay, the new start stays.
+                    var t0 = p.keyTime(1) > seam + 1e-4 ? seam : p.keyTime(1) - 0.001;
+                    p.setValueAtTime(t0, old.value);
+                    var first = p.nearestKeyIndex(t0);
+                    p.setInterpolationTypeAtKey(first, KeyframeInterpolationType.HOLD, KeyframeInterpolationType.HOLD);
+                    fixes.push({ layer: entry.name, property: old.name, fix: "held until the seam" });
+                } else if (before && before < p.numKeys && hasTime(old.keys, p.keyTime(before)) &&
+                    !hasTime(old.keys, p.keyTime(before + 1))) {
+                    // The old last key before the seam used to be held: it stays held until the new keys.
+                    var lastOld = true;
+                    for (var o = 0; o < old.keys.length; o++) {
+                        lastOld = lastOld && old.keys[o] <= p.keyTime(before) + 1e-4;
+                    }
+                    if (lastOld) {
+                        p.setInterpolationTypeAtKey(before, p.keyInInterpolationType(before), KeyframeInterpolationType.HOLD);
+                        fixes.push({ layer: entry.name, property: old.name, fix: "old last key held" });
+                    }
+                }
+            }
+        }
+        return fixes;
     };
 
     return E;

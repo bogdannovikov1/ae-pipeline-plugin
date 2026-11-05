@@ -40,6 +40,10 @@ class Fragment(ExtensionMixin, RoundsMixin):
         self.settings = settings or load_settings(self.video)
         self.path = self.folder / STATE_FILE
         self.state = json.loads(self.path.read_text(encoding="utf-8")) if self.path.is_file() else None
+        if self.state:
+            # Фрагмент начат до появления нового этапа: этап встаёт в очередь, начатое не меняется.
+            for stage in self.stages:
+                self.state["stages"].setdefault(stage["id"], {"status": "pending", "note": None})
 
     def create(self, audio=None):
         if self.state:
@@ -118,6 +122,36 @@ class Fragment(ExtensionMixin, RoundsMixin):
                         self.state["rounds"] = 0
         if changed:
             self.save()
+        self.skip_unwanted_checks()
+
+    def check_wanted(self):
+        """Ревью кода нужно, если оно включено и фрагмент не короче code_review.min_seconds."""
+        cfg = self.settings["code_review"]
+        if not cfg["enabled"]:
+            return False
+        path = self.folder / f"{self.name}.timeline.json"
+        if not cfg["min_seconds"] or not path.is_file():
+            return True
+        words = json.loads(path.read_text(encoding="utf-8")).get("words") or [{"end": 0}]
+        return words[-1]["end"] >= cfg["min_seconds"]
+
+    def skip_unwanted_checks(self):
+        """Выключенное настройкой ревью кода закрывается само, когда до него дошла очередь."""
+        for stage in self.stages:
+            if stage["review"] != "once" or self.status(stage["id"]) not in ("pending", "stale"):
+                continue
+            if not self.blocked_by(stage) and not self.check_wanted():
+                self.state["stages"][stage["id"]]["skipped"] = True
+                self.seal(stage, "approved")
+
+    def check_report(self, stage):
+        """Отчёт ревью кода: находки не ниже code_review.block_on идут аниматору на одну правку."""
+        path = self.folder / self.names(stage["outputs"])[0]
+        report = json.loads(path.read_text(encoding="utf-8"))
+        threshold = self.settings["code_review"]["block_on"]
+        levels = ["minor", "major", "critical"]
+        level = levels.index(threshold) if threshold in levels else len(levels)
+        return report, [f for f in report["findings"] if levels.index(f["severity"]) >= level]
 
     def blocked_by(self, stage):
         return [need for need in stage["needs"] if self.status(need) != "approved"]
@@ -186,6 +220,13 @@ class Fragment(ExtensionMixin, RoundsMixin):
         errors = self.check_outputs(stage, final=False)
         if errors:
             raise PipelineError("; ".join(errors))
+        if stage["review"] == "once":
+            # Одна итерация: чистый отчёт закрывает этап, иначе аниматор правит один раз и вызывается finish.
+            report, blocking = self.check_report(stage)
+            if not blocking:
+                self.seal(stage, "approved")
+                return {"decision": "clean", "findings": report["findings"]}
+            return {"decision": "fix", "findings": blocking}
         self.seal(stage, "approved" if stage["review"] == "auto" else "review")
 
     def approve(self, stage_id):
@@ -320,7 +361,7 @@ def main():
             elif args.command == "finish":
                 fragment.finish(args.stage)
             elif args.command == "done":
-                fragment.done(args.stage)
+                check = fragment.done(args.stage)
             elif args.command == "approve":
                 fragment.approve(args.stage)
             else:
@@ -328,6 +369,8 @@ def main():
                     parser.error("укажите --note")
                 fragment.reject(args.stage, args.note)
             result = fragment.next_action()
+            if args.command == "done" and check:
+                result["check"] = check
             if args.command == "done" and fragment.stage(args.stage).get("needs_build"):
                 scene = fragment.folder / fragment.names(fragment.stage(args.stage)["outputs"])[0]
                 result["warnings"] = scene_warnings(scene, fragment.settings)

@@ -8,5 +8,5 @@
   "assets": "assets/assets.json",
   "references": "references",
   "craft": "craft.md",
-  "engine": 3
+  "engine": 4
 }

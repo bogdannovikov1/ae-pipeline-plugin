@@ -5,6 +5,9 @@
     python3 block_lab.py new soft_pop
     python3 block_lab.py new array_cells --from-base
     python3 block_lab.py set soft_pop params.size=120 tokens.motion.lead=0.2
+    python3 block_lab.py variant soft_pop big params.size=200
+    python3 block_lab.py part soft_pop styles --seconds 6
+    python3 block_lab.py build soft_pop styles
     python3 block_lab.py build soft_pop
     python3 block_lab.py promote soft_pop
 """
@@ -25,6 +28,8 @@ TIMELINE = "lab.timeline.json"
 AUDIO = "lab.wav"
 PROJECT = "lab.aep"
 BRIEF = "brief.md"
+VARIANT = "variant_{}.scene.json"  # рядом с основной сценой: пути к звуку и словам те же
+PARTS = "parts"  # короткие демо, каждое в своей композиции: большая композиция тормозит AE
 SAMPLE_RATE = 16000
 
 TEMPLATE = """// {id}
@@ -54,7 +59,8 @@ def base_dir(settings):
 
 def lab_dir(settings, block):
     folder = labs_dir(settings) / block
-    if not (folder / SCENE).is_file():
+    # Песочница из одних частей (parts/*) без большой сцены тоже песочница.
+    if not (folder / SCENE).is_file() and not any(folder.glob(f"{PARTS}/*/{SCENE}")):
         raise LabError(f"Песочницы {block} нет: сначала block_lab.py new {block}")
     return folder
 
@@ -126,13 +132,70 @@ def parse_value(text):
         return text
 
 
+def lab_item(scene, block):
+    item = next((it for it in scene["items"] if it.get("id") == block), None)
+    if item is None:
+        raise LabError(f"В {SCENE} нет элемента с id {block}")
+    return item
+
+
 def set_values(settings, block, assignments):
     """Меняет числа элемента блока в демо-сцене без модели: params.x=1, tokens.motion.lead=0.2."""
     path = lab_dir(settings, block) / SCENE
     scene = read_json(path)
-    item = next((it for it in scene["items"] if it.get("id") == block), None)
-    if item is None:
-        raise LabError(f"В {SCENE} нет элемента с id {block}")
+    changes = apply_values(lab_item(scene, block), assignments)
+    write_json(path, scene)
+    return changes
+
+
+def variant(settings, block, name, assignments):
+    """Вариант демо-сцены со своими числами блока: при сборке он попадает в свою композицию того же проекта."""
+    if not name.replace("_", "").isalnum():
+        raise LabError(f"Имя варианта — буквы, цифры и _: {name}")
+    folder = lab_dir(settings, block)
+    scene = read_json(folder / SCENE)
+    changes = apply_values(lab_item(scene, block), assignments)
+    scene["comp"]["name"] = f"{scene['comp']['name']}_{name}"
+    path = folder / VARIANT.format(name)
+    write_json(path, scene)
+    return path, changes
+
+
+def part(settings, block, name, seconds=None):
+    """Короткое демо в своей папке и композиции: своя тишина и слова-метки, блоки общие с песочницей."""
+    if not name.replace("_", "").isalnum():
+        raise LabError(f"Имя части — буквы, цифры и _: {name}")
+    folder = lab_dir(settings, block)
+    target = folder / PARTS / name
+    if target.exists():
+        raise LabError(f"Часть уже есть: {target}")
+    target.mkdir(parents=True)
+    (target / "blocks").symlink_to(Path("..") / ".." / "blocks")
+    lab = settings["lab"]
+    timeline = lab_timeline(seconds or lab["part_seconds"], lab["word_seconds"])
+    write_json(target / TIMELINE, timeline)
+    write_silence(target / AUDIO, timeline["words"][-1]["end"] + lab["tail"])
+    scene = read_json(folder / SCENE)
+    scene.update(audio=AUDIO, timeline=TIMELINE, transcript_hash=timeline["transcript_hash"])
+    scene["comp"]["name"] = f"lab_{block}_{name}"
+    write_json(target / SCENE, scene)
+    return target
+
+
+def lab_scenes(folder, only=()):
+    """Сцены сборки. Если есть части, собираются они, а не большая сцена: так AE не тормозит."""
+    parts = sorted(folder.glob(f"{PARTS}/*/{SCENE}"))
+    if only:
+        chosen = [scene for scene in parts if scene.parent.name in only]
+        missing = set(only) - {scene.parent.name for scene in chosen}
+        if missing:
+            raise LabError(f"Нет частей: {', '.join(sorted(missing))}")
+        return chosen
+    main = parts or [folder / SCENE]
+    return main + sorted(folder.glob(VARIANT.format("*")))
+
+
+def apply_values(item, assignments):
     changes = []
     for assignment in assignments:
         key, sep, raw = assignment.partition("=")
@@ -145,26 +208,29 @@ def set_values(settings, block, assignments):
         old = node.get(parts[-1])
         node[parts[-1]] = parse_value(raw)
         changes.append(f"{key}: {json.dumps(old, ensure_ascii=False)} -> {json.dumps(node[parts[-1]], ensure_ascii=False)}")
-    write_json(path, scene)
     return changes
 
 
-def build(settings, block, allowed):
+def build(settings, block, allowed, only=()):
     """Собирает демо в проекте песочницы: свой проект сохраняется без вопроса, архив сборок чистится."""
     from ae_run import BUILD_SCRIPT, launch, run_jsx
 
     folder = lab_dir(settings, block)
-    errors = check_scene(folder / SCENE, settings)
-    if errors:
-        raise LabError("Сцена песочницы не прошла проверку:\n" + "\n".join(f"- {e}" for e in errors))
+    scenes = lab_scenes(folder, only)
+    for scene in scenes:
+        errors = check_scene(scene, settings)
+        if errors:
+            raise LabError(f"Сцена {scene.name} не прошла проверку:\n" + "\n".join(f"- {e}" for e in errors))
     project = folder / PROJECT
     # Любой проект песочницы свой: его можно сохранить без вопроса, правки автора в нём остаются.
     autosave = [labs_dir(settings) / "*" / PROJECT]
     launch(settings, allowed)
     run_jsx(LAB_SCRIPT, {"LAB_PROJECT": project, "LAB_MODE": "open"}, settings, autosave)
-    run_jsx(BUILD_SCRIPT, {"SCENE_PATH": (folder / SCENE).resolve(), "BASES_DIR": bases_dir(settings)}, settings, autosave)
-    comp = read_json(folder / SCENE)["comp"]["name"]
-    run_jsx(LAB_SCRIPT, {"LAB_PROJECT": project, "LAB_MODE": "clean", "LAB_COMP": comp}, settings, autosave)
+    # Каждый вариант — своя композиция в том же проекте, чтобы автор сравнивал их рядом.
+    for scene in scenes:
+        run_jsx(BUILD_SCRIPT, {"SCENE_PATH": scene.resolve(), "BASES_DIR": bases_dir(settings)}, settings, autosave)
+        comp = read_json(scene)["comp"]["name"]
+        run_jsx(LAB_SCRIPT, {"LAB_PROJECT": project, "LAB_MODE": "clean", "LAB_COMP": comp}, settings, autosave)
     return project
 
 
@@ -192,11 +258,12 @@ def promote(settings, block, replace=False, lab=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("command", choices=["new", "set", "build", "promote", "path"])
+    parser.add_argument("command", choices=["new", "set", "variant", "part", "build", "promote", "path"])
     parser.add_argument("block", help="id блока, snake_case")
-    parser.add_argument("values", nargs="*", help="для set: params.<ключ>=<значение> или tokens.<путь>=<значение>")
+    parser.add_argument("values", nargs="*",
+                        help="для set: params.<ключ>=<значение> или tokens.<путь>=<значение>; для variant: имя, затем значения; для part: имя; для build: имена частей")
     parser.add_argument("--from-base", action="store_true", help="для new: начать с копии блока базы")
-    parser.add_argument("--seconds", type=float, help="для new: длина демо-сцены вместо lab.seconds")
+    parser.add_argument("--seconds", type=float, help="для new и part: длина демо-сцены вместо lab.seconds / lab.part_seconds")
     parser.add_argument("--launch", action="store_true", help="для build: автор разрешил запустить After Effects")
     parser.add_argument("--lab", help="для promote: песочница, если её имя не совпадает с блоком")
     parser.add_argument("--replace", action="store_true", help="для promote: заменить блок базы")
@@ -208,8 +275,17 @@ def main():
             print(create(settings, args.block, args.from_base, args.seconds))
         elif args.command == "set":
             print("\n".join(set_values(settings, args.block, args.values)))
+        elif args.command == "variant":
+            if not args.values:
+                raise LabError("Укажите имя варианта: block_lab.py variant <блок> <имя> params.x=1")
+            path, changes = variant(settings, args.block, args.values[0], args.values[1:])
+            print("\n".join([str(path)] + changes))
+        elif args.command == "part":
+            if len(args.values) != 1:
+                raise LabError("Укажите имя части: block_lab.py part <блок> <имя>")
+            print(part(settings, args.block, args.values[0], args.seconds))
         elif args.command == "build":
-            print(f"Готово: {build(settings, args.block, args.launch)}")
+            print(f"Готово: {build(settings, args.block, args.launch, tuple(args.values))}")
         elif args.command == "promote":
             print(f"В базе: {promote(settings, args.block, args.replace, args.lab)}")
         else:

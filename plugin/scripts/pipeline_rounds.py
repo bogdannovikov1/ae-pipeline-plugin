@@ -26,17 +26,24 @@ class RoundsMixin:
         level = SEVERITIES.index(threshold)
         return [f for f in report["findings"] if SEVERITIES.index(f["severity"]) >= level]
 
-    def finish_rounds(self):
-        """Сцена менялась между кругами: фиксируем её последнюю версию в сборке и предревью."""
+    def finish_rounds(self, *stage_ids):
+        """Сцена менялась после сборки: фиксируем её последнюю версию в сборке и проверках после неё."""
         self.seal(self.stage("build"), "approved")
-        self.seal(self.stage("preflight"), "approved")
+        for stage in self.stages:
+            if stage["review"] == "once" and self.status(stage["id"]) in ("running", "stale", "approved"):
+                self.seal(stage, "approved")
+        for stage_id in stage_ids or ("preflight",):
+            self.seal(self.stage(stage_id), "approved")
 
     def finish(self, stage_id):
-        """Автор решил больше не запускать ревью: этап закрывается с текущей сценой."""
+        """Ревью кода после одной правки или предревью по решению автора: этап закрывается с текущей сценой."""
         stage = self.stage(stage_id)
-        if stage["review"] != "rounds" or self.status(stage_id) != "running":
+        if stage["review"] not in ("rounds", "once") or self.status(stage_id) != "running":
             raise PipelineError(f"Этап {stage_id} нельзя завершить: {self.status(stage_id)}")
-        self.finish_rounds()
+        errors = self.check_outputs(self.stage("build"), final=False)
+        if errors:
+            raise PipelineError("; ".join(errors))
+        self.finish_rounds(stage_id)
 
     def round(self):
         """Учитывает отчёт очередного круга и говорит, исправлять или передавать автору."""

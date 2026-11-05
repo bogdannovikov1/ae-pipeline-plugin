@@ -147,7 +147,7 @@ def agents_section(video):
         "Это видео ведётся плагином ae-video. Любая модель (Claude, ChatGPT, Codex и другие) работает так:",
         "",
         f"1. Узнай фрагмент и получи свою роль: `python3 {PLUGIN_ROOT}/scripts/brief.py make {info['video']} <фрагмент>`. Выполняй вывод по шагам.",
-        f"2. Исполнителю этапа (transcriber, animator, reviewer, librarian) передавай целиком вывод `python3 {PLUGIN_ROOT}/scripts/brief.py <роль> {info['video']} <фрагмент> --task \"<слова автора>\"`. Своими словами роль не пересказывай.",
+        f"2. Исполнителю этапа (transcriber, director, animator, checker, reviewer, librarian) передавай целиком вывод `python3 {PLUGIN_ROOT}/scripts/brief.py <роль> {info['video']} <фрагмент> --task \"<слова автора>\"`. Своими словами роль не пересказывай.",
         f"3. Состояние этапов: `python3 {PLUGIN_ROOT}/scripts/pipeline.py next {info['video']} <фрагмент>`.",
         "",
         *env_lines(info),

@@ -17,7 +17,7 @@
     {
       "id": "plan",
       "title": "План анимации",
-      "executor": "orchestrator",
+      "executor": "director",
       "needs": [
         "transcript"
       ],
@@ -49,11 +49,30 @@
       "needs_build": true
     },
     {
+      "id": "check",
+      "title": "Ревью кода",
+      "executor": "checker",
+      "needs": [
+        "build"
+      ],
+      "inputs": [
+        "{f}.timeline.json",
+        "{f}.animation.json",
+        "{f}.scene.json"
+      ],
+      "outputs": [
+        "reviews/{f}.check.json"
+      ],
+      "track_outputs": false,
+      "validate": "check",
+      "review": "once"
+    },
+    {
       "id": "preflight",
       "title": "Предревью",
       "executor": "reviewer",
       "needs": [
-        "build"
+        "check"
       ],
       "inputs": [
         "{f}.scene.json"

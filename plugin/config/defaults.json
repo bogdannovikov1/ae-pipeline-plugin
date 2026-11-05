@@ -25,7 +25,13 @@
     "launch_timeout": 240,
     "review_width": 1920,
     "review_height": 1080,
-    "review_fps": 30
+    "review_fps": 30,
+    "keep_builds": 1
+  },
+  "code_review": {
+    "enabled": true,
+    "min_seconds": 0,
+    "block_on": "major"
   },
   "review": {
     "max_rounds": 3,
@@ -55,16 +61,22 @@
     "long_phrase_zone": 0.5,
     "sound_min_gap": 0.3,
     "sound_series_gap": 0.08,
-    "sound_max_shift": 0.03
+    "sound_max_shift": 0.03,
+    "fast_words_per_second": 3.2
   },
   "layout": {
     "safe_margin": 96,
     "min_overlap": 8,
     "full_frame": 0.9,
-    "settle": 0.8
+    "settle": 0.8,
+    "max_layers_per_minute": 80,
+    "max_jump_px": 160,
+    "flash_delta": 60,
+    "exit_allowance": 1.0
   },
   "lab": {
     "seconds": 4,
+    "part_seconds": 6,
     "word_seconds": 0.5,
     "start_word": 2,
     "tail": 1.0,

@@ -17,7 +17,7 @@ from plan_check import check as plan_check, plan_errors
 from settings import bases_dir, settings_for
 
 
-ENGINE_VERSION = 3  # растёт, когда блоки базы перестают работать на старом движке
+ENGINE_VERSION = 4  # растёт, когда блоки базы перестают работать на старом движке
 
 
 def file_hash(path):
@@ -160,6 +160,29 @@ def check_scene(path, settings=None):
     return errors
 
 
+def check_report(path):
+    """Отчёт ревью кода: сводка и находки с серьёзностью, местом и исправлением."""
+    try:
+        data = read_json(path)
+    except (OSError, ValueError) as error:
+        return [f"не читается отчёт {path.name}: {error}"]
+    errors = []
+    if not isinstance(data.get("summary"), str):
+        errors.append("нет summary")
+    findings = data.get("findings")
+    if not isinstance(findings, list):
+        return errors + ["findings должен быть списком"]
+    for number, finding in enumerate(findings):
+        if finding.get("severity") not in ("minor", "major", "critical"):
+            errors.append(f"находка {number}: severity — minor, major или critical")
+        if not finding.get("beat") and not finding.get("item"):
+            errors.append(f"находка {number}: укажи beat или item")
+        for key in ("what", "fix"):
+            if not finding.get(key):
+                errors.append(f"находка {number}: нет {key}")
+    return errors
+
+
 def run_check(kind, path, folder, names, settings=None, final=False):
     """Единая точка для конвейера: names подсказывает путь транскрипта."""
     if kind == "timeline":
@@ -168,12 +191,14 @@ def run_check(kind, path, folder, names, settings=None, final=False):
         return check_animation(path, folder / names["timeline"])
     if kind == "scene":
         return check_scene(path, settings)
+    if kind == "check":
+        return check_report(path)
     raise ValueError(f"Неизвестная проверка: {kind}")
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("kind", choices=["timeline", "animation", "scene"])
+    parser.add_argument("kind", choices=["timeline", "animation", "scene", "check"])
     parser.add_argument("path", type=Path)
     parser.add_argument("--timeline", type=Path, help="для animation: путь к транскрипту")
     parser.add_argument("--final", action="store_true", help="для timeline: требовать заморозку")
@@ -183,6 +208,8 @@ def main():
         errors = check_timeline(args.path, args.final)
     elif args.kind == "animation":
         errors = check_animation(args.path, args.timeline or args.path.with_name(args.path.name.replace(".animation.", ".timeline.")))
+    elif args.kind == "check":
+        errors = check_report(args.path)
     else:
         errors = check_scene(args.path)
     for error in errors:

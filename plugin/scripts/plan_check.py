@@ -78,10 +78,13 @@ def coverage(scene, plan, helpers=()):
             shared.add(item.get("block"))
         elif beat is None:
             warnings.append(f"{label}: не привязан к биту плана (поле beat)")
-        elif beat not in by_beat:
-            errors.append(f"{label}: бит {beat} не найден в плане")
         else:
-            by_beat[beat].append(item)
+            # Объект, который живёт через несколько битов, перечисляет их списком и засчитывается каждому.
+            for one in beat if isinstance(beat, list) else [beat]:
+                if one not in by_beat:
+                    errors.append(f"{label}: бит {one} не найден в плане")
+                else:
+                    by_beat[one].append(item)
 
     for number, beat in enumerate(beats):
         ident = ids[number]
@@ -171,7 +174,7 @@ def coverage_lines(scene, plan):
     lines = []
     for number, beat in enumerate(plan.get("beats") or []):
         ident = beat_id(beat, number)
-        mine = [f"{item_label(item, n)}:{item.get('block')}" for n, item in enumerate(items) if item.get("beat") == ident]
+        mine = [f"{item_label(item, n)}:{item.get('block')}" for n, item in enumerate(items) if ident in (item.get("beat") if isinstance(item.get("beat"), list) else [item.get("beat")])]
         lines.append(f"{ident} [{beat.get('at_word')}–{beat.get('until_word')}] план: {', '.join(approved_blocks(beat)) or 'новый блок'} | сцена: {', '.join(mine) or '—'}")
     return lines
 

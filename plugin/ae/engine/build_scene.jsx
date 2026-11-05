@@ -7,6 +7,9 @@
 (function () {
     var SCRIPT_NAME = "Build Scene";
     var OLD_BUILDS = "old builds";
+    // Marks a composition made by this script: "<BUILD_MARK> <comp name> <build time> <signature>".
+    var BUILD_MARK = "ae-video build";
+    var EDITED = "edited";
     var folder = new File($.fileName).parent.fsName;
     var quiet = !!$.global.SCENE_PATH;
 
@@ -54,11 +57,54 @@
         Engine.starts = {};
         Engine.footage = {};
         Engine.soundLog = [];
+        Engine.ends = {};
+        Engine.seam = null;
+        Engine.missing = {};
+        layerLog = {};
+        built = [];
         return scene;
+    }
+
+    // Settings from ae_run.py; a build started another way takes the plugin defaults.
+    function setting(name, section, key) {
+        if ($.global[name] !== undefined && $.global[name] !== "") {
+            return parseFloat($.global[name]);
+        }
+        var file = new File(folder + "/../../config/defaults.json");
+        if (file.exists) {
+            var value = Timeline.readJson(file)[section];
+            if (value && value[key] !== undefined) {
+                return value[key];
+            }
+        }
+        return undefined;
+    }
+
+    // Items built in this run: their video layers and the ids they point at through target or targets.
+    var built = [];
+    // Per item the AE ids of the layers it made, in the order they were made: the journal keeps them,
+    // so an append can find the same objects after manual edits.
+    var layerLog = {};
+    var replaying = false;
+
+    // An item cannot use an earlier one whose layers the author deleted: say which and why.
+    function checkTargets(item, id) {
+        var targets = Engine.targetsOf(item);
+        for (var i = 0; i < targets.length; i++) {
+            var lost = Engine.missing[targets[i]];
+            if (lost && lost.length) {
+                throw new Error(id + ": цель " + targets[i] + " потеряла слои (" + lost.join(", ") +
+                    "): их удалили вручную или сборка старая. Верните слои или пересоберите сцену целиком");
+            }
+        }
     }
 
     function buildItem(item, index) {
         var id = item.id || item.block + "_" + index;
+        if (!replaying) {
+            checkTargets(item, id);
+        }
+        var before = Engine.layerIds(Engine.comp);
         var at = item.always ? 0 : Engine.time(item);
         Engine.starts[id] = at;
         Engine.current = id;
@@ -71,6 +117,9 @@
             Engine.tokens = tokens;
         }
         var end = Engine.endTime(item);
+        if (!replaying) {
+            built.push({ id: id, targets: Engine.targetsOf(item), layers: layers });
+        }
         for (var n = 0; n < layers.length; n++) {
             Engine.tag(layers[n], id);
             if (layers[n].hasVideo) {
@@ -82,6 +131,15 @@
                 }
             }
         }
+        var fresh = Engine.newLayers(Engine.comp, before);
+        if (!replaying) {
+            var ids = [];
+            for (var f = 0; f < fresh.length; f++) {
+                ids.push(fresh[f].id);
+            }
+            layerLog[id] = ids;
+        }
+        return fresh;
     }
 
     // Each recorded part of a fragment gets its own voice layer at its place on the timeline.
@@ -180,18 +238,153 @@
     }
 
     // Keeps a finished composition with its manual edits and adds only the new items.
+    // Layers of an old item in the real comp, matched to the replayed ones: by the ids in the journal,
+    // else (an older build) by tag, name and order. null where nothing matches.
+    function realLayersOf(id, fresh, byId) {
+        var ids = oldJournal && oldJournal.layers ? oldJournal.layers[id] : null;
+        var result = [];
+        var i;
+        if (ids && ids.length === fresh.length) {
+            for (i = 0; i < ids.length; i++) {
+                result.push(byId[ids[i]] || null);
+            }
+            return result;
+        }
+        var comp = Engine.comp;
+        var tagged = [];
+        for (var n = 1; n <= comp.numLayers; n++) {
+            if (comp.layer(n).comment === "scene:" + id) {
+                tagged.push(comp.layer(n));
+            }
+        }
+        tagged.sort(function (a, b) { return a.id - b.id; });
+        var used = {};
+        for (i = 0; i < fresh.length; i++) {
+            var match = null;
+            for (var t = 0; !match && fresh[i].comment === "scene:" + id && t < tagged.length; t++) {
+                if (!used[tagged[t].id] && tagged[t].name === fresh[i].name) {
+                    match = tagged[t];
+                    used[match.id] = true;
+                }
+            }
+            result.push(match);
+        }
+        return result;
+    }
+
+    function removeWithSources(comp) {
+        var sources = [];
+        for (var n = 1; n <= comp.numLayers; n++) {
+            var source = comp.layer(n).source;
+            if (source && !(source instanceof CompItem)) {
+                sources.push(source);
+            }
+        }
+        comp.remove();
+        for (var i = 0; i < sources.length; i++) {
+            try {
+                if (sources[i].usedIn.length === 0) {
+                    sources[i].remove();
+                }
+            } catch (e) {
+                // Already removed through another layer of the same source.
+            }
+        }
+    }
+
+    // The old items play again in a scratch comp, so their blocks fill Engine.store, starts and ends as in
+    // the first build; then every layer and property in the store points at the real, possibly edited layer.
+    function replayOld(scene, from) {
+        var real = Engine.comp;
+        var temp = app.project.items.addComp("ae-video replay", real.width, real.height, real.pixelAspect,
+            real.duration, real.frameRate);
+        var log = Engine.soundLog;
+        var made = {};
+        var order = [];
+        var id = "";
+        // Sounds of the replay die with the scratch comp: they never reach the journal.
+        Engine.soundLog = [];
+        Engine.comp = temp;
+        replaying = true;
+        try {
+            for (var n = 0; n < from; n++) {
+                var old = scene.items[n];
+                id = old.id || old.block + "_" + n;
+                made[id] = buildItem(old, n);
+                order.push(id);
+            }
+        } catch (e) {
+            Engine.comp = real;
+            removeWithSources(temp);
+            throw new Error("повтор старого элемента " + id + ": " + e.toString());
+        } finally {
+            Engine.soundLog = log;
+            Engine.comp = real;
+            replaying = false;
+        }
+        var byId = {};
+        for (var r = 1; r <= real.numLayers; r++) {
+            byId[real.layer(r).id] = real.layer(r);
+        }
+        var map = {};
+        for (var o = 0; o < order.length; o++) {
+            var fresh = made[order[o]];
+            var matched = realLayersOf(order[o], fresh, byId);
+            var ids = [];
+            for (var f = 0; f < fresh.length; f++) {
+                map[fresh[f].id] = matched[f];
+                if (matched[f]) {
+                    ids.push(matched[f].id);
+                }
+            }
+            layerLog[order[o]] = ids;
+        }
+        for (var s = 0; s < order.length; s++) {
+            var missing = [];
+            if (Engine.store.hasOwnProperty(order[s])) {
+                Engine.store[order[s]] = Engine.remap(Engine.store[order[s]], map, temp, real, missing);
+            }
+            Engine.missing[order[s]] = missing;
+        }
+        removeWithSources(temp);
+    }
+
     function append(scene, from) {
         var words = Engine.timeline.words;
         Engine.comp = Timeline.findLatestComp(scene.comp.name);
-        lengthen(Engine.comp, words[words.length - 1].end + scene.tail);
+        var comp = Engine.comp;
+        // What was there is frozen: its layers are unlocked only while the new part is built.
+        var frozen = [];
+        for (var n = 1; n <= comp.numLayers; n++) {
+            frozen.push(comp.layer(n));
+            comp.layer(n).locked = false;
+        }
+        lengthen(comp, words[words.length - 1].end + scene.tail);
         addVoices(scene);
-        for (var n = 0; n < from; n++) {
-            var old = scene.items[n];
-            Engine.starts[old.id || old.block + "_" + n] = old.always ? 0 : Engine.time(old);
+        replayOld(scene, from);
+        var seam = null;
+        for (var t = from; t < scene.items.length; t++) {
+            var item = scene.items[t];
+            var start = item.always ? 0 : Engine.time(item);
+            seam = seam === null ? start : Math.min(seam, start);
         }
-        for (var i = from; i < scene.items.length; i++) {
-            buildItem(scene.items[i], i);
+        var snapshot = seam === null ? [] : Engine.freezeSnapshot(frozen);
+        Engine.seam = seam;
+        try {
+            for (var i = from; i < scene.items.length; i++) {
+                buildItem(scene.items[i], i);
+            }
+            Engine.endWithTargets(built);
+            freeze = { seam: seam === null ? null : Math.round(seam * 1000) / 1000,
+                fixes: seam === null ? [] : Engine.freezeFix(snapshot, seam) };
+        } finally {
+            Engine.seam = null;
+            for (var k = 0; k < frozen.length; k++) {
+                frozen[k].locked = true;
+            }
         }
+        // Append is the path after manual edits: the comp is never cleaned up as an unedited build.
+        markBuild(Engine.comp, scene.comp.name, true);
         Engine.comp.openInViewer();
     }
 
@@ -213,6 +406,121 @@
         }
     }
 
+    function round3(value) {
+        return Math.round(value * 1000) / 1000;
+    }
+
+    function valueText(value) {
+        if (value instanceof Array) {
+            var out = [];
+            for (var i = 0; i < value.length; i++) {
+                out.push(round3(value[i]));
+            }
+            return out.join(",");
+        }
+        if (typeof value === "number") {
+            return String(round3(value));
+        }
+        return value && value.text !== undefined ? value.text : String(value);
+    }
+
+    function propText(prop) {
+        if (!prop) {
+            return "";
+        }
+        var text = prop.expressionEnabled ? "e" + prop.expression : "";
+        if (prop.numKeys) {
+            for (var k = 1; k <= prop.numKeys; k++) {
+                text += "@" + round3(prop.keyTime(k)) + "=" + valueText(prop.keyValue(k));
+            }
+        } else if (prop.propertyValueType !== PropertyValueType.NO_VALUE) {
+            text += valueText(prop.value);
+        }
+        return text;
+    }
+
+    // A fingerprint of what an author changes by hand: layers, their names, order, timing, parents,
+    // switches, transforms with their keys, text, effects and masks. Same comp, same fingerprint.
+    function signature(comp) {
+        var text = comp.numLayers + "|" + round3(comp.duration);
+        var names = ["ADBE Anchor Point", "ADBE Position", "ADBE Scale", "ADBE Rotate Z", "ADBE Opacity"];
+        for (var i = 1; i <= comp.numLayers; i++) {
+            var layer = comp.layer(i);
+            text += "#" + layer.name + "|" + layer.comment + "|" + round3(layer.inPoint) + "|" + round3(layer.outPoint) +
+                "|" + round3(layer.startTime) + "|" + layer.enabled + "|" + (layer.parent ? layer.parent.index : 0);
+            var transform = layer.property("ADBE Transform Group");
+            for (var n = 0; transform && n < names.length; n++) {
+                text += "|" + propText(transform.property(names[n]));
+            }
+            if (layer instanceof TextLayer) {
+                text += "|" + propText(layer.property("ADBE Text Properties").property("ADBE Text Document"));
+            }
+            var effects = layer.property("ADBE Effect Parade");
+            var masks = layer.property("ADBE Mask Parade");
+            text += "|" + (effects ? effects.numProperties : 0) + "|" + (masks ? masks.numProperties : 0);
+            if (layer.hasAudio && layer.audio) {
+                text += "|" + propText(layer.audio.audioLevels);
+            }
+        }
+        var hash = 0;
+        for (var c = 0; c < text.length; c++) {
+            hash = (hash * 31 + text.charCodeAt(c)) % 2147483647;
+        }
+        return String(hash) + "-" + text.length;
+    }
+
+    function markBuild(comp, name, edited) {
+        var stamp = String(new Date().getTime());
+        comp.comment = BUILD_MARK + " " + name + " " + stamp + " " + (edited ? EDITED : signature(comp));
+    }
+
+    // Older builds beyond keep stay only if a person touched them: renamed, edited (fingerprint differs or
+    // they were appended to), used in another comp. Comps without the mark were not made here and stay.
+    // Footage, sounds and null solids that only the removed comps used go with them.
+    function removeOldBuilds(name, current, keep) {
+        if (keep === undefined || keep === null || isNaN(keep) || keep < 0) {
+            return;
+        }
+        var builds = [];
+        var i;
+        for (i = 1; i <= app.project.numItems; i++) {
+            var item = app.project.item(i);
+            if (!(item instanceof CompItem) || item === current) {
+                continue;
+            }
+            var mark = String(item.comment).split(" ");
+            if (String(item.comment).indexOf(BUILD_MARK + " ") !== 0 || mark[2] !== name) {
+                continue;
+            }
+            builds.push({ comp: item, time: parseFloat(mark[3]), sig: mark[4] });
+        }
+        builds.sort(function (a, b) { return b.time - a.time; });
+        var sources = [];
+        for (i = keep; i < builds.length; i++) {
+            var old = builds[i].comp;
+            var named = old.name === name || (old.name.indexOf(name) === 0 && /^_\d+$/.test(old.name.substr(name.length)));
+            if (!named || builds[i].sig === EDITED || old.usedIn.length || signature(old) !== builds[i].sig) {
+                continue;
+            }
+            for (var n = 1; n <= old.numLayers; n++) {
+                var source = old.layer(n).source;
+                if (source && !(source instanceof CompItem)) {
+                    sources.push(source);
+                }
+            }
+            old.remove();
+        }
+        for (i = 0; i < sources.length; i++) {
+            try {
+                if (sources[i].usedIn.length === 0) {
+                    sources[i].remove();
+                }
+            } catch (e) {
+                // Already removed through another layer of the same source.
+            }
+        }
+    }
+
     function build(scene) {
         var c = scene.comp;
         archiveBuilds(c.name);
@@ -224,17 +532,30 @@
             buildItem(scene.items[i], i);
         }
         addCamera();
+        Engine.endWithTargets(built);
+        markBuild(Engine.comp, c.name, false);
+        removeOldBuilds(c.name, Engine.comp, setting("KEEP_BUILDS", "ae", "keep_builds"));
         Engine.comp.openInViewer();
     }
 
     // What was built, for the Python tools: an appended part keeps the sounds of the earlier ones.
-    function writeJournal(scenePath, keep) {
-        var file = new File(scenePath.replace(/(\.scene)?\.json$/, ".sounds.json"));
-        var sounds = Engine.soundLog;
-        if (keep && file.exists) {
-            sounds = Timeline.readJson(file).sounds.concat(sounds);
+    function journalFile(scenePath) {
+        return new File(scenePath.replace(/(\.scene)?\.json$/, ".sounds.json"));
+    }
+
+    // The journal of the last build when appending: its sounds and layer ids stay.
+    var oldJournal = null;
+    var oldSounds = null;
+    // Append only: the seam time and what was corrected so the frames before it stay as they were.
+    var freeze = null;
+
+    function writeJournal(scenePath) {
+        var sounds = oldSounds ? oldSounds.concat(Engine.soundLog) : Engine.soundLog;
+        var journal = { sounds: sounds, starts: Engine.starts, layers: layerLog };
+        if (freeze) {
+            journal.freeze = freeze;
         }
-        Timeline.writeJson(file, { sounds: sounds, starts: Engine.starts });
+        Timeline.writeJson(journalFile(scenePath), journal);
     }
 
     function main() {
@@ -249,6 +570,10 @@
         $.evalFile(new File(folder + "/engine.jsxinc"));
         var scene = prepare(path);
         var appendFrom = $.global.APPEND_FROM;
+        if (appendFrom !== undefined && journalFile(path).exists) {
+            oldJournal = Timeline.readJson(journalFile(path));
+            oldSounds = oldJournal.sounds;
+        }
         app.beginUndoGroup(SCRIPT_NAME);
         try {
             if (appendFrom !== undefined) {
@@ -259,7 +584,7 @@
         } finally {
             app.endUndoGroup();
         }
-        writeJournal(path, appendFrom !== undefined);
+        writeJournal(path);
         if (!quiet) {
             alert("Done: " + Engine.comp.name + ". Items: " + scene.items.length, SCRIPT_NAME);
         }

@@ -20,8 +20,9 @@
 | Этап | Исполнитель | Результат | Ревью |
 |---|---|---|---|
 | `transcript` | `transcriber` | `<f>.timeline.json`, `<f>.notes.md`, `<f>.aep` | агент спрашивает и открывает AE с маркерами, автор правит, затем заморозка |
-| `plan` | навык `plan`, позже `director` | `<f>.animation.json`: биты с `id` и утверждёнными `blocks` | автор в чате |
+| `plan` | `director` (Opus, средние усилия) | `<f>.animation.json`: биты с `id` и утверждёнными `blocks` | автор в чате |
 | `build` | `animator` | `<f>.scene.json`, композиция | автор решает про предревью |
+| `check` | `checker` и `animator` | `reviews/<f>.check.json`: находки ревью кода сцены | автоматически, один проход и одна правка, настройка `code_review` |
 | `preflight` | `reviewer` и `animator` | `reviews/round_N.json` | каждый запуск по согласию автора, до `review.max_rounds` кругов |
 | `polish` | автор и `animator` | `<f>.aep` | автор |
 | `curate` | `librarian` | `<f>.base_proposals.md` | раз в `base_update.every_fragments` фрагментов автор решает, нужен ли этап, и выбирает предложения |
@@ -69,7 +70,7 @@ plugin/                           то, что устанавливается
   skills/montage-fundamentals/    законы монтажа, цвета, типографики, движения
   skills/base-structure/          устройство базы для агентов
   skills/after-effects/           справочник по AE, из aedev-tools/adobe-agent-skills, Apache-2.0
-  agents/                         transcriber, animator, reviewer, librarian
+  agents/                         transcriber, director, animator, checker, reviewer, librarian
   scripts/
     pipeline*.py                  состояние этапов, расширение, круги ревью
     validate.py                   проверка файлов и отметки сборки
@@ -80,7 +81,7 @@ plugin/                           то, что устанавливается
     transcribe, refine_timings, approve_transcript, extend_timeline  транскрипт
     base_index, base_scan, sound_measure, setup_base  работа с базой
     sound_library.py              библиотека звуков-кандидатов: папки, измерения, прослушка, черновик токенов
-    block_lab.py                  песочница нового блока: демо, правка чисел, перенос в базу
+    block_lab.py                  песочница нового блока: демо, правка чисел, варианты, перенос в базу
     settings.py, doctor.py        настройки и проверка компьютера
   ae/                             JSX: ревью маркеров, съёмка, раскладка, движок сцен
   examples/demo_scene.json        демонстрация блоков
@@ -117,5 +118,6 @@ plugin/                           то, что устанавливается
 - Слои-фигуры не вращаем в 3D, родителя задаём до позиции. Подробности монтажа живут в `craft.md` базы.
 - README написан для любого пользователя: личных путей и привязок к одному автору в нём и в репозитории нет.
 - `plugin/starter_base` публичная: без ассетов неизвестной лицензии. Рабочая база автора в репозиторий не входит.
+- `AGENTS.md` в корне — копия этого файла для Codex и ChatGPT: меняешь одно — обнови и другое.
 - Перед коммитом: `python3 tests/test_pipeline.py`, `node tests/check_jsx.js`, `node tests/test_engine.js`, `claude plugin validate ./plugin`. Те же проверки идут в GitHub Actions.
 - Движение и звук может оценить только автор: говори об этом прямо.

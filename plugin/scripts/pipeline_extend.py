@@ -110,6 +110,7 @@ class ExtensionMixin:
             "transcript": "approved",
             "plan": "approved",
             "build": "approved" if built else "pending",
+            "check": "approved" if finished else "pending",
             "preflight": "approved" if finished else "pending",
             "polish": "approved" if finished else "pending",
             "curate": "approved" if (self.folder / f"{self.name}.base_proposals.md").is_file() else "pending",
@@ -169,7 +170,7 @@ class ExtensionMixin:
         self.state["parts"].pop()
         self.state["rounds"] = 0
         for stage in self.stages:
-            status = statuses[stage["id"]]
+            status = statuses.get(stage["id"], "pending")
             self.state["stages"][stage["id"]] = {"status": "pending", "note": None}
             if status in ("approved", "review"):
                 self.seal(stage, status)
