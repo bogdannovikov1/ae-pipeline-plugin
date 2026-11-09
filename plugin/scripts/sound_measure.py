@@ -12,15 +12,17 @@ import subprocess
 
 from settings import bases_dir, load_settings
 
-RATE = 22050  # частота анализа: удар и громкость читаются и на ней
-SILENCE_BELOW_PEAK_DB = 30  # порог считается от пика: тихий звук не должен казаться короче
+CFG = load_settings()["sound_measure"]
+
+RATE = CFG["rate"]  # частота анализа: удар и громкость читаются и на ней
+SILENCE_BELOW_PEAK_DB = CFG["silence_below_peak_db"]  # порог от пика: тихий звук не должен казаться короче
 
 
 def trailing_start(log, duration):
     """Возвращает начало тишины, если она доходит до конца файла."""
     starts = [float(v) for v in re.findall(r"silence_start: ([\d.]+)", log)]
     ends = [float(v) for v in re.findall(r"silence_end: ([\d.]+)", log)]
-    if starts and (len(ends) < len(starts) or ends[-1] >= duration - 0.02):
+    if starts and (len(ends) < len(starts) or ends[-1] >= duration - CFG["tail_tolerance"]):
         return starts[-1]
     return duration
 

@@ -31,6 +31,8 @@ python3 plugin/scripts/settings.py show --video <папка видео>
 | `voice.allowed_tags` | Единственные теги интонации, которые можно ставить в текст |
 | `voice.tag_hints` | Когда ставить каждый тег: подсказка модели при разметке |
 | `voice.spoken_forms` | Как произносить формулы и символы: «O(1)» → «О от единицы»; личная настройка |
+| `voice.direction_pattern` | Регулярное выражение пометок для анимации в тексте: скобки после пробела или в начале строки, одна вложенная скобка допускается |
+| `voice.direction_context_words` | Сколько слов речи перед пометкой показывать как её место |
 | `voice.notation_pattern` | Регулярное выражение формул, которые голос прочтёт буквально: `voice.py check` не пускает их в озвучку |
 | `voice.formats` | Форматы ответа API по порядку: если тариф не даёт первый, берётся следующий |
 | `voice.pcm_rate` | Частота рабочего PCM, Гц: совпадает с форматом `pcm_<частота>` |
@@ -46,6 +48,7 @@ python3 plugin/scripts/settings.py show --video <папка видео>
 | `lab.word_seconds` | Шаг слов-меток демо-сцены, с |
 | `lab.start_word` | Слово-метка, на котором стартует блок |
 | `lab.tail` | Хвост демо-сцены после последней метки, с |
+| `lab.sample_rate` | Частота тишины в демо-сцене песочницы, Гц |
 | `lab.width`, `lab.height` | Размер кадра демо-сцены |
 | `transcribe.model` | Модель MLX Whisper |
 | `transcribe.language` | Язык записи |
@@ -55,9 +58,15 @@ python3 plugin/scripts/settings.py show --video <папка видео>
 | `refine.max_gap_frames` | Более длинная тишина разделяет слово на куски |
 | `refine.max_below_speech_db` | Что настолько тише речи, речью не считается |
 | `refine.pad_start`, `refine.pad_end` | Запас вокруг слова, с |
+| `refine.sample_rate` | Частота анализа громкости при подрезке слов, Гц |
+| `refine.noise_percentile`, `refine.speech_percentile` | Перцентили громкости, которые считаются шумом и речью |
 | `refine.threshold_position` | Порог между шумом (0) и речью (1) |
 | `ae.app` | Имя приложения After Effects |
 | `ae.timeout` | Предел выполнения скрипта в AE, с |
+| `ae.apps_dir` | Папка приложений, где `doctor.py` ищет After Effects |
+| `ae.ready_check_timeout` | Ожидание ответа AE на одну проверку готовности при запуске, с |
+| `ae.ready_check_pause` | Пауза между проверками готовности AE, с |
+| `ae.frame_poll_seconds` | Как часто проверять, дописались ли кадры съёмки, с |
 | `ae.launch_timeout` | Ожидание запуска After Effects, с |
 | `ae.review_width`, `ae.review_height`, `ae.review_fps` | Композиция ревью; fps берётся из транскрипта, если он там есть |
 | `ae.autosave_projects` | Папки, где проект можно сохранять без вопроса |
@@ -90,3 +99,43 @@ python3 plugin/scripts/settings.py show --video <папка видео>
 | `layout.flash_delta` | Изменение видимости за один кадр внутри жизни слоя, после которого это мигание, % |
 | `layout.exit_allowance` | Сколько слой может оставаться видимым после конца своего `until_word` (уход), с |
 | `layout.max_layers_per_minute` | Сколько видимых слоёв на минуту речи ещё не тяжело; больше — предупреждение `view.py check`, 0 отключает |
+
+## Проверки раскладки и движения (`layout`)
+
+| Ключ | Значение |
+|---|---|
+| `layout.visible_ahead`, `layout.visible_behind` | Окно вокруг слова, в котором слой считается видимым для `view.py state`, с |
+| `layout.bottom_zone` | Доля высоты кадра, ниже которой начинается нижняя полоса |
+| `layout.frame_tolerance` | Сколько кадров между выборками считается соседними для скачка и мигания |
+| `layout.stuck_seconds` | Сколько секунд полупрозрачности считается застрявшим слоем |
+| `layout.opaque_percent` | Прозрачность, выше которой слой считается полностью видимым, % |
+| `layout.min_minutes` | Наименьшая длина речи для расчёта слоёв в минуту, мин |
+
+## Проверка компьютера (`doctor`)
+
+| Ключ | Значение |
+|---|---|
+| `doctor.font_folders` | Папки, где ищутся шрифты базы |
+
+## Измерение звуков (`sound_measure`)
+
+| Ключ | Значение |
+|---|---|
+| `sound_measure.rate` | Частота анализа удара и громкости, Гц |
+| `sound_measure.silence_below_peak_db` | Тишина — это настолько тише пика, дБ |
+| `sound_measure.tail_tolerance` | Тишина ближе к концу файла считается его хвостом, с |
+
+## Библиотека звуков-кандидатов (`sound_library`)
+
+| Ключ | Значение |
+|---|---|
+| `sound_library.preview_rate` | Частота файлов прослушки, Гц |
+| `sound_library.pop` | Длина появления в прослушке, с |
+| `sound_library.preview_groups` | Моменты ударов для прослушки серий, с |
+| `sound_library.preview_series_group` | Какая группа звучит в прослушке с подложкой |
+| `sound_library.target_db`, `sound_library.max_gain_db` | Средняя громкость прослушки и предел усиления, дБ |
+| `sound_library.series_gap`, `sound_library.series_max_hits`, `sound_library.series_fade_db` | Серия в прослушке: наименьший шаг, число ударов, затухание к концу |
+| `sound_library.single_offset` | Сдвиг одиночного звука от начала прослушки, с |
+| `sound_library.bed_gain_db` | Громкость подложки относительно серии, дБ |
+| `sound_library.draft_series`, `sound_library.draft_bed`, `sound_library.draft_level`, `sound_library.draft_reference_loudness` | Значения черновика токенов `sounds` для базы |
+

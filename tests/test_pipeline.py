@@ -20,7 +20,7 @@ from sound_measure import trailing_start
 from sound_library import classify, hit_and_loudness, init as init_library, load_scheme, place_hits, propose
 from view import beat_lines, layout_warnings, motion_warnings, state_lines, weight_warnings, scene_warnings, sound_log_path, sound_warnings, review_lines, scene_lines, text_lines, timing_warnings
 from setup_base import STARTER, create_base
-from voice import chunks, eq_filter, keep_take, plain_text, tag_errors, text_errors
+from voice import chunks, direction_words, eq_filter, keep_take, plain_text, split_directions, tag_errors, text_errors
 from validate import ENGINE_VERSION, check_built, file_hash
 from validate import check_animation, check_scene, check_timeline
 
@@ -1112,6 +1112,16 @@ class Voice(Case):
         self.assertEqual(len(errors), 2)
         self.assertIn("«О от единицы»", errors[0])
         self.assertEqual(text_errors("[thoughtful] Сложность О от единицы.", cfg), [])
+
+    def test_directions_leave_speech_and_find_words(self):
+        pattern = load_settings(user_path=self.root / "none")["voice"]["direction_pattern"]
+        text = "Возьмём массив (массив из пяти ячеек появляется) и число.\nСложность O(1) (знак O(1) крупно).\n(тёмный фон) Начнём."
+        spoken, notes = split_directions(text, pattern)
+        self.assertEqual(spoken, "Возьмём массив и число.\nСложность O(1).\nНачнём.\n")
+        self.assertEqual([n["note"] for n in notes], ["массив из пяти ячеек появляется", "знак O(1) крупно", "тёмный фон"])
+        heard = [{"word": w} for w in "Возьмём массив и число. Сложность О от единицы. Начнём.".split()]
+        found = [heard[n["timeline_word"]]["word"] for n in direction_words(notes, spoken, heard)]
+        self.assertEqual(found, ["массив", "Сложность", "Начнём."])
 
     def test_eq_filter(self):
         self.assertEqual(eq_filter([{"freq": 2434, "gain": -6.2, "q": 1.4}, {"freq": 3888, "gain": -9.0, "q": 0.9}]),

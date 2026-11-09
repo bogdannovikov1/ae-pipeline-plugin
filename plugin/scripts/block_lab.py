@@ -30,7 +30,6 @@ PROJECT = "lab.aep"
 BRIEF = "brief.md"
 VARIANT = "variant_{}.scene.json"  # рядом с основной сценой: пути к звуку и словам те же
 PARTS = "parts"  # короткие демо, каждое в своей композиции: большая композиция тормозит AE
-SAMPLE_RATE = 16000
 
 TEMPLATE = """// {id}
 // Черновик песочницы: замените анимацию. Вкусовые числа берите из params с запасным значением из Engine.tokens.
@@ -79,12 +78,12 @@ def lab_timeline(seconds, step):
     return data
 
 
-def write_silence(path, seconds):
+def write_silence(path, seconds, rate):
     with wave.open(str(path), "wb") as file:
         file.setnchannels(1)
         file.setsampwidth(2)
-        file.setframerate(SAMPLE_RATE)
-        file.writeframes(b"\0\0" * int(SAMPLE_RATE * seconds))
+        file.setframerate(rate)
+        file.writeframes(b"\0\0" * int(rate * seconds))
 
 
 def create(settings, block, from_base=False, seconds=None):
@@ -110,7 +109,7 @@ def create(settings, block, from_base=False, seconds=None):
 
     timeline = lab_timeline(seconds or lab["seconds"], lab["word_seconds"])
     write_json(folder / TIMELINE, timeline)
-    write_silence(folder / AUDIO, timeline["words"][-1]["end"] + lab["tail"])
+    write_silence(folder / AUDIO, timeline["words"][-1]["end"] + lab["tail"], lab["sample_rate"])
     items = []
     if (base / "blocks" / "background_dark").is_dir():
         items.append({"block": "background_dark", "always": True})
@@ -174,7 +173,7 @@ def part(settings, block, name, seconds=None):
     lab = settings["lab"]
     timeline = lab_timeline(seconds or lab["part_seconds"], lab["word_seconds"])
     write_json(target / TIMELINE, timeline)
-    write_silence(target / AUDIO, timeline["words"][-1]["end"] + lab["tail"])
+    write_silence(target / AUDIO, timeline["words"][-1]["end"] + lab["tail"], lab["sample_rate"])
     scene = read_json(folder / SCENE)
     scene.update(audio=AUDIO, timeline=TIMELINE, transcript_hash=timeline["transcript_hash"])
     scene["comp"]["name"] = f"lab_{block}_{name}"

@@ -26,8 +26,6 @@ REVIEW_SCRIPT = PLUGIN_ROOT / "ae" / "open_review.jsx"
 APPLY_SCRIPT = PLUGIN_ROOT / "ae" / "update_transcript_from_markers.jsx"
 LAYOUT_SCRIPT = PLUGIN_ROOT / "ae" / "export_layout.jsx"
 OPEN_SCRIPT = PLUGIN_ROOT / "ae" / "open_project.jsx"
-READY_CHECK_TIMEOUT = 20
-READY_CHECK_PAUSE = 3
 ERROR_PREFIX = "error: "
 
 
@@ -80,7 +78,7 @@ def launch(settings, allowed):
     if subprocess.run(["open", "-a", ae["app"]], capture_output=True).returncode:
         raise RuntimeError(f"Не удалось запустить {ae['app']}: проверьте настройку ae.app")
     command = (
-        f'with timeout of {READY_CHECK_TIMEOUT} seconds\n'
+        f'with timeout of {ae["ready_check_timeout"]} seconds\n'
         f'tell application {json.dumps(ae["app"])} to DoScript "1"\n'
         f'end timeout'
     )
@@ -88,7 +86,7 @@ def launch(settings, allowed):
     while time.time() < deadline:
         if subprocess.run(["osascript", "-e", command], capture_output=True).returncode == 0:
             return
-        time.sleep(READY_CHECK_PAUSE)
+        time.sleep(ae["ready_check_pause"])
     raise RuntimeError(f"After Effects не ответил за {ae['launch_timeout']} с")
 
 

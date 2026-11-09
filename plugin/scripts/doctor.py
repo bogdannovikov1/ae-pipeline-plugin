@@ -12,14 +12,13 @@ from pathlib import Path
 from settings import PLUGIN_ROOT, bases_dir, load_settings
 from validate import ENGINE_VERSION
 
-FONT_FOLDERS = ["~/Library/Fonts", "/Library/Fonts"]
 
 
-def has_font(name):
+def has_font(name, folders):
     """Ищет файл шрифта по имени семейства. У вариативных шрифтов файл называется
     по семейству (Caveat[wght].ttf), а PostScript-имя добавляет Roman (CaveatRoman-Bold)."""
     names = {name, re.sub(r"Roman$", "", name)}
-    return any(next(Path(f).expanduser().glob(f"{n}*"), None) for f in FONT_FOLDERS for n in names if n)
+    return any(next(Path(f).expanduser().glob(f"{n}*"), None) for f in folders for n in names if n)
 
 
 def base_fonts(tokens):
@@ -35,7 +34,7 @@ def main():
         ("ffmpeg", shutil.which("ffmpeg"), "brew install ffmpeg"),
         ("numpy", importlib.util.find_spec("numpy"), "pip3 install mlx-whisper numpy"),
         ("mlx_whisper", importlib.util.find_spec("mlx_whisper"), "pip3 install mlx-whisper numpy"),
-        (settings["ae"]["app"], Path("/Applications", settings["ae"]["app"]).is_dir(), "проверьте ae.app в настройках"),
+        (settings["ae"]["app"], Path(settings["ae"]["apps_dir"], settings["ae"]["app"]).is_dir(), "проверьте ae.app в настройках"),
         (f"база {base}", (base / "tokens.json").is_file(), "запустите /ae-video:setup или проверьте bases_dir и base в настройках"),
     ]
     if (base / "base.json").is_file():
@@ -47,7 +46,7 @@ def main():
         checks.append(("ключ ElevenLabs в Связке ключей", found, f'security add-generic-password -U -a "$USER" -s {voice["keychain_service"]} -w'))
     if (base / "tokens.json").is_file():
         for font in base_fonts(json.loads((base / "tokens.json").read_text(encoding="utf-8"))):
-            checks.append((f"шрифт {font}", has_font(font), "установите шрифт базы"))
+            checks.append((f"шрифт {font}", has_font(font, settings["doctor"]["font_folders"]), "установите шрифт базы"))
 
     print(f"Плагин: {PLUGIN_ROOT}")
     failed = 0

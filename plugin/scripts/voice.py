@@ -73,6 +73,64 @@ def text_errors(text, cfg):
     return tag_errors(text, cfg["allowed_tags"]) + notation_errors(text, cfg.get("notation_pattern"), cfg.get("spoken_forms"))
 
 
+def split_directions(text, pattern, context=6):
+    """Отделяет пометки автора в скобках (что показать) от текста для озвучки.
+
+    Возвращает текст без пометок и список {note, word, context}: word — сколько слов речи
+    сказано до пометки, context — слова речи перед ней. Формулы вида O(1)
+    пометками не считаются: у пометки перед скобкой пробел или начало строки.
+    """
+    spoken_lines, directions, words = [], [], []
+    for line in text.splitlines():
+        position, kept, line_start = 0, [], len(words)
+        for match in re.finditer(pattern, line):
+            before = line[position:match.start()]
+            kept.append(before)
+            words += spoken_words(before)
+            directions.append({"note": match.group(1).strip(), "word": len(words), "context": " ".join(words[-context:]),
+                               "line_start": len(words) == line_start})
+            position = match.end()
+        kept.append(line[position:])
+        words += spoken_words(line[position:])
+        spoken_lines.append(re.sub(r"\s+([,.!?…:;])", r"\1", re.sub(r"[ \t]{2,}", " ", "".join(kept))).strip())
+    return "\n".join(spoken_lines).strip() + "\n", directions
+
+
+def spoken_words(text):
+    """Слова речи: токены с буквой или цифрой, без отдельной пунктуации."""
+    return [w for w in plain_text(text).split() if re.search(r"\w", w)]
+
+
+def normalize(word):
+    return re.sub(r"[^\wё]", "", word.lower().replace("ё", "е"))
+
+
+def align_words(spoken, heard):
+    """Сопоставляет слова текста со словами транскрипта: номер слова текста → номер слова транскрипта."""
+    import difflib
+    a, b = [normalize(w) for w in spoken], [normalize(w) for w in heard]
+    mapping = {}
+    for block in difflib.SequenceMatcher(None, a, b, autojunk=False).get_matching_blocks():
+        for k in range(block.size):
+            mapping[block.a + k] = block.b + k
+    return mapping
+
+
+def direction_words(directions, spoken_text, timeline_words):
+    """Номер слова транскрипта для каждой пометки: последнее сказанное перед ней слово
+    (пометка обычно описывает только что названное), в начале строки — первое слово после неё."""
+    spoken = spoken_words(spoken_text)
+    mapping = align_words(spoken, [w["word"] for w in timeline_words])
+    result = []
+    for item in directions:
+        before = [mapping[i] for i in range(item["word"] - 1, -1, -1) if i in mapping][:1]
+        after = [mapping[i] for i in range(item["word"], len(spoken)) if i in mapping][:1]
+        order = (after, before) if item.get("line_start") else (before, after)
+        found = next((side[0] for side in order if side), None)
+        result.append(dict(item, timeline_word=min(found, len(timeline_words) - 1) if found is not None else None))
+    return result
+
+
 def plain_text(text):
     """Текст без тегов: подсказка для распознавания речи."""
     return re.sub(r"[ \t]+", " ", TAG.sub("", text)).strip()
@@ -222,11 +280,14 @@ def generate(text, out, cfg, raw=None, voice_settings=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("command", choices=["models", "check", "plain", "generate"])
+    parser.add_argument("command", choices=["models", "check", "plain", "split", "directions", "generate"])
     parser.add_argument("text", nargs="?", type=Path, help="файл текста с тегами")
     parser.add_argument("--out", type=Path, help="для generate: итоговый WAV с EQ")
     parser.add_argument("--raw", type=Path, help="для generate: тот же дубль без EQ")
     parser.add_argument("--stability", type=float, help="для generate: заменить stability из настроек")
+    parser.add_argument("--spoken", type=Path, help="для split: куда записать текст без пометок")
+    parser.add_argument("--directions", type=Path, help="для split: куда записать пометки; для directions: файл пометок")
+    parser.add_argument("--timeline", type=Path, help="для directions: замороженный транскрипт")
     parser.add_argument("--video", type=Path, help="папка видео с её настройками")
     args = parser.parse_args()
     cfg = load_settings(args.video)["voice"]
@@ -239,6 +300,27 @@ def main():
         if not args.text:
             parser.error("укажите файл текста")
         text = args.text.read_text(encoding="utf-8")
+        if args.command == "split":
+            if not (args.spoken and args.directions):
+                parser.error("укажите --spoken и --directions")
+            spoken, directions = split_directions(text, cfg["direction_pattern"], cfg["direction_context_words"])
+            args.spoken.write_text(spoken, encoding="utf-8")
+            args.directions.write_text(json.dumps({"spoken": args.spoken.name, "directions": directions}, ensure_ascii=False, indent=2), encoding="utf-8")
+            for item in directions:
+                print(f"пометка перед словом {item['word']} (после «{item['context']}»): {item['note']}")
+            print(f"Пометок: {len(directions)}. Текст для озвучки: {args.spoken}")
+            return
+        if args.command == "directions":
+            data = json.loads(text)
+            spoken = (args.text.parent / data["spoken"]).read_text(encoding="utf-8")
+            if not args.timeline:
+                parser.error("укажите --timeline")
+            words = json.loads(args.timeline.read_text(encoding="utf-8"))["words"]
+            for item in direction_words(data["directions"], spoken, words):
+                where = item["timeline_word"]
+                place = f"слово {where} «{words[where]['word']}»" if where is not None else "слово не найдено"
+                print(f"{place} (после «{item['context']}»): {item['note']}")
+            return
         if args.command == "plain":
             print(plain_text(text))
             return

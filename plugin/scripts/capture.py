@@ -29,16 +29,16 @@ def moments(starts, offsets, limit, duration, from_time=0):
     return [ordered[round(n * step)] for n in range(limit)]
 
 
-def wait_for_frames(paths, timeout):
+def wait_for_frames(paths, timeout, poll=0.5):
     """saveFrameToPng работает асинхронно: ждём файлы и их полную запись."""
     deadline = time.time() + timeout
     while time.time() < deadline:
         if all(p.is_file() and p.stat().st_size for p in paths):
             sizes = [p.stat().st_size for p in paths]
-            time.sleep(0.5)
+            time.sleep(poll)
             if sizes == [p.stat().st_size for p in paths]:
                 return
-        time.sleep(0.5)
+        time.sleep(poll)
     missing = sum(not p.is_file() for p in paths)
     raise RuntimeError(f"Кадры не сохранились за {timeout} с, нет файлов: {missing}")
 
@@ -87,7 +87,7 @@ def main():
     try:
         run_jsx(CAPTURE_SCRIPT, {"CAPTURE_SPEC": spec}, settings)
         frames = [folder / f"frame_{n + 1:04d}.png" for n in range(len(times))]
-        wait_for_frames(frames, review["frame_timeout"])
+        wait_for_frames(frames, review["frame_timeout"], settings["ae"]["frame_poll_seconds"])
         build_sheets(folder, review)
     except (RuntimeError, subprocess.CalledProcessError) as error:
         sys.exit(f"Съёмка не удалась: {error}")

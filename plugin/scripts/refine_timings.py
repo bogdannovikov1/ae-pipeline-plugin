@@ -17,14 +17,13 @@ import numpy as np
 
 from settings import settings_for
 
-SAMPLE_RATE = 16000
 
 
-def load_mono(audio_path):
+def load_mono(audio_path, rate):
     """Декодирует аудио в моно float32 через ffmpeg."""
     command = [
         "ffmpeg", "-v", "error", "-i", str(audio_path),
-        "-f", "f32le", "-ac", "1", "-ar", str(SAMPLE_RATE), "-",
+        "-f", "f32le", "-ac", "1", "-ar", str(rate), "-",
     ]
     output = subprocess.run(command, capture_output=True, check=True).stdout
     return np.frombuffer(output, dtype=np.float32)
@@ -32,14 +31,14 @@ def load_mono(audio_path):
 
 def analyze(samples, cfg):
     """Возвращает для кадров по 10 мс признак речи и громкость в дБ."""
-    frame_size = int(SAMPLE_RATE * cfg["frame_seconds"])
+    frame_size = int(cfg["sample_rate"] * cfg["frame_seconds"])
     count = len(samples) // frame_size
     frames = samples[:count * frame_size].reshape(count, frame_size)
     rms = np.sqrt(np.mean(frames ** 2, axis=1))
     levels = 20 * np.log10(rms + 1e-10)
 
     # Порог считается по самой записи и не зависит от её общей громкости.
-    noise, speech = np.percentile(levels, [10, 90])
+    noise, speech = np.percentile(levels, [cfg["noise_percentile"], cfg["speech_percentile"]])
     threshold = max(noise + cfg["threshold_position"] * (speech - noise), speech - cfg["max_below_speech_db"])
     voiced = levels >= threshold
 
@@ -85,7 +84,7 @@ def refine_word(word, voiced, levels, cfg):
 def refine_timeline(data, audio_path):
     """Обновляет таймкоды слов, кадры и границы фраз в данных таймлайна."""
     cfg = settings_for(audio_path)["refine"]
-    voiced, levels = analyze(load_mono(audio_path), cfg)
+    voiced, levels = analyze(load_mono(audio_path, cfg["sample_rate"]), cfg)
     fps = data.get("fps")
 
     for word in data["words"]:

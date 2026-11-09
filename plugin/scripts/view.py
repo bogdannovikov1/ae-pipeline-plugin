@@ -21,7 +21,7 @@ import sys
 from pathlib import Path
 
 from plan_check import approved_blocks, beat_id, check as plan_check, plan_path
-from settings import settings_for
+from settings import load_settings, settings_for
 from validate import read_json, resolve_base, resolve_path
 
 
@@ -106,14 +106,15 @@ def item_alive(item, word):
     return item["at_word"] <= word and item.get("until_word", 10 ** 9) >= word
 
 
-def state_lines(scene, data, layout, word):
+def state_lines(scene, data, layout, word, cfg=None):
     """Что в кадре на слове: объекты, их слова и рамки. Нужна на стыке расширения вместо чтения всей сцены."""
+    cfg = cfg or load_settings()["layout"]
     words = data["words"]
     word = min(word, len(words) - 1)
     moment = words[word]["start"]
     boxes = {}
     for box in (layout or {}).get("boxes", []):
-        if box["opacity"] > 0 and box["time"] <= moment + 0.5 and box["until"] >= moment - 0.05:
+        if box["opacity"] > 0 and box["time"] <= moment + cfg["visible_ahead"] and box["until"] >= moment - cfg["visible_behind"]:
             frame = boxes.setdefault(box["item"], [box["left"], box["top"], box["right"], box["bottom"]])
             frame[:] = [min(frame[0], box["left"]), min(frame[1], box["top"]), max(frame[2], box["right"]), max(frame[3], box["bottom"])]
     yield f"слово {word} «{words[word]['word']}», {moment:.2f} с"
@@ -126,7 +127,7 @@ def state_lines(scene, data, layout, word):
         yield f"  {item.get('id') or '-'} {item.get('block')}{target} [{item.get('at_word', '-')}–{until}]{place}"
     if layout:
         height = layout["height"]
-        bottom = [i for i, f in boxes.items() if f[3] > height * 0.75]
+        bottom = [i for i, f in boxes.items() if f[3] > height * cfg["bottom_zone"]]
         yield "  нижняя полоса: " + (f"занята ({', '.join(bottom)})" if bottom else "свободна")
 
 
@@ -336,20 +337,20 @@ def motion_warnings(layout, scene, data, settings):
             report(name, "late", f"висит после своего конца (until_word {item['until_word']}) до {visible[-1][0]:.2f} с")
         for a, b in zip(samples, samples[1:]):
             dt = b[0] - a[0]
-            if dt <= 1.5 * frame and shown(a) and shown(b):
+            if dt <= cfg["frame_tolerance"] * frame and shown(a) and shown(b):
                 ca, cb = ((a[2] + a[4]) / 2, (a[3] + a[5]) / 2), ((b[2] + b[4]) / 2, (b[3] + b[5]) / 2)
                 if abs(cb[0] - ca[0]) + abs(cb[1] - ca[1]) > cfg["max_jump_px"]:
                     report(name, "jump", f"скачок на {abs(cb[0] - ca[0]) + abs(cb[1] - ca[1]):.0f} px за кадр на {b[0]:.2f} с")
             inside = track["in"] + frame < a[0] and b[0] < track["out"] - frame
-            if dt <= 1.5 * frame and inside and abs(b[1] - a[1]) > cfg["flash_delta"]:
+            if dt <= cfg["frame_tolerance"] * frame and inside and abs(b[1] - a[1]) > cfg["flash_delta"]:
                 report(name, "flash", f"прозрачность прыгает {a[1]:.0f}→{b[1]:.0f} % за кадр на {b[0]:.2f} с")
         # Последняя серия выборок, где слой ни виден, ни скрыт: дольше секунды — он застрял на полпути.
         tail = []
         for s in reversed(samples):
-            if not 1 < s[1] < 95 or s[0] <= track["in"] + cfg["settle"]:
+            if not 1 < s[1] < cfg["opaque_percent"] or s[0] <= track["in"] + cfg["settle"]:
                 break
             tail.insert(0, s)
-        if tail and tail[-1][0] - tail[0][0] > 1.0:
+        if tail and tail[-1][0] - tail[0][0] > cfg["stuck_seconds"]:
             report(name, "stuck", f"застрял полупрозрачным ({tail[-1][1]:.0f} %) с {tail[0][0]:.2f} с")
         for index, s in enumerate(visible):
             settled = s[0] > track["in"] + cfg["settle"]
@@ -370,7 +371,7 @@ def weight_warnings(layout, data, cfg):
     words = data.get("words") or []
     if not limit or not words:
         return []
-    minutes = max(words[-1]["end"] / 60, 0.5)
+    minutes = max(words[-1]["end"] / 60, cfg.get("min_minutes", 0.5))
     layers = len({(box["item"], box["layer"]) for box in layout["boxes"]})
     per_minute = layers / minutes
     if per_minute <= limit:
@@ -424,7 +425,7 @@ def main():
             if args.at_word is None:
                 sys.exit("укажите --at-word")
             layout = layout_path(path)
-            lines = state_lines(scene, data, read_json(layout) if layout.is_file() else None, args.at_word)
+            lines = state_lines(scene, data, read_json(layout) if layout.is_file() else None, args.at_word, settings["layout"])
         else:
             tokens = read_json(resolve_base(scene["base"], settings) / "tokens.json")
             lines = timing_warnings(scene, data, tokens, timing) or ["Тайминг в норме"]

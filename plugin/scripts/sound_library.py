@@ -20,7 +20,8 @@ from sound_measure import hit_and_loudness, measure, pcm
 SCHEME_PATH = PLUGIN_ROOT / "config" / "sound_library.json"
 SOUND_EXT = {".wav", ".mp3", ".aif", ".aiff", ".ogg", ".flac", ".m4a"}
 HINT_FILE = "ЧТО_СЮДА.txt"
-PREVIEW_RATE = 22050
+CFG = load_settings()["sound_library"]
+PREVIEW_RATE = CFG["preview_rate"]
 
 
 def library_dir(settings):
@@ -133,10 +134,10 @@ def render(root, layout, out):
 
 
 # Тайминги прослушки повторяют блоки базы: появление 0,45 с, шаг группы 0,12 с, граф по уровням.
-POP = 0.45
-GROUPS = {"массив 10": [i * 0.12 for i in range(10)], "граф 4 уровня": [0, 0.4, 0.8, 1.2]}
-TARGET_DB = -20  # средняя громкость прослушки: файлы звучат ровно и их можно сравнивать
-MAX_GAIN_DB = 15
+POP = CFG["pop"]
+GROUPS = CFG["preview_groups"]
+TARGET_DB = CFG["target_db"]  # средняя громкость прослушки: файлы звучат ровно и их можно сравнивать
+MAX_GAIN_DB = CFG["max_gain_db"]
 
 
 def gain(f):
@@ -144,8 +145,8 @@ def gain(f):
 
 
 def series_layout(f, hits, anchor):
-    kept = place_hits(hits, 0.08, 10)
-    return [(f["library_file"], t + POP * anchor - f["hit"], gain(f) - 6 * i / max(1, len(kept) - 1))
+    kept = place_hits(hits, CFG["series_gap"], CFG["series_max_hits"])
+    return [(f["library_file"], t + POP * anchor - f["hit"], gain(f) + CFG["series_fade_db"] * i / max(1, len(kept) - 1))
             for i, t in enumerate(kept)]
 
 
@@ -167,7 +168,7 @@ def preview(root, scheme, files):
                 demos = []
                 base = sound_id(Path(f["library_file"]))
                 one = out / f"{event}__{base}.wav"
-                render(root, [(f["library_file"], 0.05, gain(f))], one)
+                render(root, [(f["library_file"], CFG["single_offset"], gain(f))], one)
                 demos.append(player(f"preview/{one.name}"))
                 if f["role"] == "series":
                     for name, hits in GROUPS.items():
@@ -176,8 +177,8 @@ def preview(root, scheme, files):
                         demos.append(f"{name} {player('preview/' + wav.name)}")
                 if f["role"] == "bed" and series:
                     wav = out / f"{event}__{base}__bed.wav"
-                    hits = GROUPS["граф 4 уровня"]
-                    render(root, series_layout(series[0], hits, cat["anchor"]) + [(f["library_file"], 0, gain(f) - 10)], wav)
+                    hits = GROUPS[CFG["preview_series_group"]]
+                    render(root, series_layout(series[0], hits, cat["anchor"]) + [(f["library_file"], 0, gain(f) + CFG["bed_gain_db"])], wav)
                     demos.append(f"с серией {player('preview/' + wav.name)}")
                 source = f.get("source", "")
                 link = f"<a href='{html.escape(source)}'>источник</a>" if source.startswith("http") else ""
@@ -214,12 +215,12 @@ def propose(scheme, files):
             if singles:
                 spec["tiers"] = unique(f["id"] for f in singles)
             if series:
-                spec["series"] = {"sounds": series, "min_hits": 3, "min_span": 0.7, "gap": 0.1, "max_hits": 10, "fade_db": -6, "pitch_step": 0}
+                spec["series"] = dict({"sounds": series}, **CFG["draft_series"])
             if beds:
-                spec["bed"] = {"sound": beds[0], "min_span": 1.2, "level": -10}
+                spec["bed"] = dict({"sound": beds[0]}, **CFG["draft_bed"])
             events[event] = spec
     events["dim"] = None
-    return {"level": -14, "reference_loudness": -20, "fallback": fallback, "events": events}
+    return {"level": CFG["draft_level"], "reference_loudness": CFG["draft_reference_loudness"], "fallback": fallback, "events": events}
 
 
 def unique(ids):
