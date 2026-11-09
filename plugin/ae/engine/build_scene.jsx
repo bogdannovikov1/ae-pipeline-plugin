@@ -116,6 +116,7 @@
         } finally {
             Engine.tokens = tokens;
         }
+        Engine.adjust(layers, item.adjust);
         var end = Engine.endTime(item);
         if (!replaying) {
             built.push({ id: id, targets: Engine.targetsOf(item), layers: layers });
@@ -140,6 +141,34 @@
             layerLog[id] = ids;
         }
         return fresh;
+    }
+
+    // Layers an item made, by the AE ids in the journal, sorted top first.
+    function layersOf(id) {
+        var ids = layerLog[id] || [];
+        var wanted = {};
+        var result = [];
+        for (var i = 0; i < ids.length; i++) {
+            wanted[ids[i]] = true;
+        }
+        for (var n = 1; n <= Engine.comp.numLayers; n++) {
+            if (wanted[Engine.comp.layer(n).id]) {
+                result.push(Engine.comp.layer(n));
+            }
+        }
+        return result;
+    }
+
+    // adjust.below / adjust.above of the items from this one on, once every item is in the comp.
+    function restack(scene, from) {
+        for (var i = from; i < scene.items.length; i++) {
+            var item = scene.items[i];
+            var adjust = item.adjust || {};
+            var mode = adjust.below ? "below" : adjust.above ? "above" : "";
+            if (mode) {
+                Engine.restack(layersOf(item.id || item.block + "_" + i), layersOf(adjust[mode]), mode);
+            }
+        }
     }
 
     // Each recorded part of a fragment gets its own voice layer at its place on the timeline.
@@ -375,6 +404,7 @@
                 buildItem(scene.items[i], i);
             }
             Engine.endWithTargets(built);
+            restack(scene, from);
             freeze = { seam: seam === null ? null : Math.round(seam * 1000) / 1000,
                 fixes: seam === null ? [] : Engine.freezeFix(snapshot, seam) };
         } finally {
@@ -533,6 +563,7 @@
         }
         addCamera();
         Engine.endWithTargets(built);
+        restack(scene, 0);
         markBuild(Engine.comp, c.name, false);
         removeOldBuilds(c.name, Engine.comp, setting("KEEP_BUILDS", "ae", "keep_builds"));
         Engine.comp.openInViewer();

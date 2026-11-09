@@ -318,4 +318,57 @@ assert.ok(/^if \(time < 10\) \{\nvalue\n\} else \{\nwiggle/.test(expr.expression
 assert.strictEqual(frozenLayer.inPoint, 0, "начало слоя прежнее");
 assert.ok(fixes.length >= 5);
 
+
+// adjust: ручные правки автора после блока, на корневых слоях; restack: порядок слоёв под или над другим элементом.
+function prop(value, keys) {
+    return {
+        value: value, keys: keys ? keys.slice(0) : null,
+        get numKeys() { return this.keys ? this.keys.length : 0; },
+        keyValue(k) { return this.keys[k - 1]; },
+        setValueAtKey(k, v) { this.keys[k - 1] = v; },
+        valueAtTime() { return this.value; },
+        setValue(v) { this.value = v; },
+    };
+}
+function adjLayer(id, parent, position, opts) {
+    const props = {
+        "ADBE Position": Object.assign(position, { dimensionsSeparated: false }),
+        "ADBE Scale": prop([100, 100, 100], opts && opts.scaleKeys),
+        "ADBE Rotate Z": prop(0),
+    };
+    return { id, parent, hasVideo: !(opts && opts.audio), property: () => ({ property: (name) => props[name] }), props };
+}
+const rootLayer = adjLayer(1, null, prop([100, 200, 0]), { scaleKeys: [[0, 0, 0], [100, 100, 100]] });
+const childLayer = adjLayer(2, rootLayer, prop([10, 10, 0]));
+const keyedLayer = adjLayer(3, { id: 99 }, prop(null, [[0, 0, 0], [50, 50, 0]]));
+const soundLayer = adjLayer(4, null, prop([0, 0, 0]), { audio: true });
+E.adjust([rootLayer, childLayer, keyedLayer, soundLayer], { offset: [5, -10], scale: 0.5, rotation: 3 });
+assert.deepStrictEqual(rootLayer.props["ADBE Position"].value, [105, 190, 0], "сдвиг корня");
+assert.deepStrictEqual(rootLayer.props["ADBE Scale"].keys, [[0, 0, 0], [50, 50, 50]], "масштаб по всем ключам");
+assert.strictEqual(rootLayer.props["ADBE Rotate Z"].value, 3, "поворот");
+assert.deepStrictEqual(childLayer.props["ADBE Position"].value, [10, 10, 0], "ребёнок идёт за родителем");
+assert.deepStrictEqual(keyedLayer.props["ADBE Position"].keys, [[5, -10, 0], [55, 40, 0]], "родитель из другого элемента: слой корневой");
+assert.deepStrictEqual(soundLayer.props["ADBE Position"].value, [0, 0, 0], "звук не трогаем");
+E.adjust([rootLayer], null);
+const sepProps = { "ADBE Position": { dimensionsSeparated: true }, "ADBE Position_0": prop(10), "ADBE Position_1": prop(null, [20, 30]) };
+E.adjust([{ id: 7, parent: null, hasVideo: true, property: () => ({ property: (n) => sepProps[n] }) }], { offset: [1, 2] });
+assert.ok(sepProps["ADBE Position_0"].value === 11 && sepProps["ADBE Position_1"].keys.join() === "22,32", "раздельная позиция");
+
+const stack = [];
+function stacked(name) {
+    const one = {
+        name,
+        moveAfter(other) { stack.splice(stack.indexOf(one), 1); stack.splice(stack.indexOf(other) + 1, 0, one); },
+        moveBefore(other) { stack.splice(stack.indexOf(one), 1); stack.splice(stack.indexOf(other), 0, one); },
+    };
+    stack.push(one);
+    return one;
+}
+const [z1, z2, o1, o2, bg] = ["z1", "z2", "o1", "o2", "bg"].map(stacked);
+E.restack([z1, z2], [o1, o2], "below");
+assert.deepStrictEqual(stack.map((l) => l.name), ["o1", "o2", "z1", "z2", "bg"], "под нижним слоем, свой порядок");
+E.restack([bg], [o1, o2], "above");
+assert.deepStrictEqual(stack.map((l) => l.name), ["bg", "o1", "o2", "z1", "z2"], "над верхним слоем");
+E.restack([], [o1], "below");
+
 console.log("Движок в порядке");

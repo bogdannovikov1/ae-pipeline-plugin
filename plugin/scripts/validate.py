@@ -111,6 +111,35 @@ def resolve_base(value, settings):
     return Path(value).expanduser()
 
 
+def adjust_errors(item, ids, label):
+    """Поле adjust: ручные правки автора, которые перенёс ae_run.py diff --apply."""
+    adjust = item.get("adjust")
+    if adjust is None:
+        return []
+    if not isinstance(adjust, dict):
+        return [f"{label}: adjust должен быть объектом"]
+    errors = []
+    number = (int, float)
+    offset = adjust.get("offset")
+    if offset is not None and not (isinstance(offset, list) and 2 <= len(offset) <= 3
+                                   and all(isinstance(x, number) for x in offset)):
+        errors.append(f"{label}: adjust.offset — список из 2 или 3 чисел")
+    scale = adjust.get("scale")
+    if scale is not None and not (isinstance(scale, number) and scale > 0):
+        errors.append(f"{label}: adjust.scale — положительное число")
+    if "rotation" in adjust and not isinstance(adjust["rotation"], number):
+        errors.append(f"{label}: adjust.rotation — число градусов")
+    if "below" in adjust and "above" in adjust:
+        errors.append(f"{label}: adjust.below и adjust.above вместе не бывают")
+    for key in ("below", "above"):
+        if key in adjust and (adjust[key] not in ids or adjust[key] == item.get("id")):
+            errors.append(f"{label}: adjust.{key} ссылается на {adjust[key]}, такого другого элемента нет")
+    unknown = set(adjust) - {"offset", "scale", "rotation", "below", "above"}
+    if unknown:
+        errors.append(f"{label}: в adjust неизвестные поля {', '.join(sorted(unknown))}")
+    return errors
+
+
 def check_scene(path, settings=None):
     """Проверяет сцену: файлы, транскрипт, блоки и ссылки между элементами."""
     settings = settings or settings_for(path)
@@ -144,6 +173,7 @@ def check_scene(path, settings=None):
 
     count = len(data.get("words", []))
     known = set()
+    ids = {item.get("id") or f"{item.get('block')}_{n}" for n, item in enumerate(scene["items"])}
     for number, item in enumerate(scene["items"]):
         label = item.get("id") or f"элемент {number}"
         block = item.get("block")
@@ -154,6 +184,7 @@ def check_scene(path, settings=None):
         if not item.get("always") and not {"at_word", "after", "at"} & set(item):
             errors.append(f"{label}: не задано время")
         errors += word_errors(item, count, label)
+        errors += adjust_errors(item, ids, label)
         known.add(item.get("id") or f"{block}_{number}")
     if not errors and (base / "tokens.json").is_file():
         errors += plan_check(path, base, settings.get("plan_check", {}).get("helper_blocks", []))[0]

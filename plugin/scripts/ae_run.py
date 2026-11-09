@@ -6,6 +6,7 @@
     python3 ae_run.py review F1.wav
     python3 ae_run.py apply-review F1.wav
     python3 ae_run.py open F1.aep
+    python3 ae_run.py diff F1.scene.json --comp F1_copy --apply
 """
 import argparse
 import json
@@ -18,6 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from settings import PLUGIN_ROOT, bases_dir, load_settings, settings_for
+from scene_diff import item_id, run as diff_scene, snapshot_path
 from validate import build_stamp_path, file_hash, read_json
 from view import layout_path, sound_log_path
 
@@ -26,6 +28,7 @@ REVIEW_SCRIPT = PLUGIN_ROOT / "ae" / "open_review.jsx"
 APPLY_SCRIPT = PLUGIN_ROOT / "ae" / "update_transcript_from_markers.jsx"
 LAYOUT_SCRIPT = PLUGIN_ROOT / "ae" / "export_layout.jsx"
 OPEN_SCRIPT = PLUGIN_ROOT / "ae" / "open_project.jsx"
+TRANSFORMS_SCRIPT = PLUGIN_ROOT / "ae" / "export_transforms.jsx"
 ERROR_PREFIX = "error: "
 
 
@@ -39,13 +42,17 @@ def project_pattern(patterns):
     return "^(" + "|".join(parts) + ")(/|$)"
 
 
-def wrapper(script, globals_, pattern, result):
-    """Собирает обёртку: сохраняет разрешённый проект, запускает скрипт, пишет итог в файл."""
+def wrapper(script, globals_, pattern, result, readonly=False):
+    """Собирает обёртку: сохраняет разрешённый проект, запускает скрипт, пишет итог в файл.
+
+    readonly: скрипт только читает проект, поэтому несохранённые правки ему не мешают.
+    """
+    guard = "false" if readonly else "app.project.dirty"
     assigns = "".join(f"$.global.{key} = {js_string(value)};\n" for key, value in globals_.items())
     clears = "".join(f"$.global.{key} = undefined;\n" for key in globals_)
     return f"""var outcome = "ok";
 try {{
-if (app.project.dirty) {{
+if ({guard}) {{
     var projectFile = app.project.file;
     if (projectFile && new RegExp({js_string(pattern)}).test(projectFile.fsName)) {{
         app.project.save();
@@ -90,14 +97,14 @@ def launch(settings, allowed):
     raise RuntimeError(f"After Effects не ответил за {ae['launch_timeout']} с")
 
 
-def run_jsx(script, globals_, settings, extra_autosave=()):
+def run_jsx(script, globals_, settings, extra_autosave=(), readonly=False):
     """Выполняет JSX и возвращает его итог. Ошибка скрипта становится RuntimeError."""
     ae = settings["ae"]
     with tempfile.TemporaryDirectory() as folder:
         result = Path(folder) / "result.txt"
         runner = Path(folder) / "runner.jsx"
         pattern = project_pattern(list(ae["autosave_projects"]) + list(extra_autosave))
-        runner.write_text(wrapper(script, globals_, pattern, result), encoding="utf-8")
+        runner.write_text(wrapper(script, globals_, pattern, result, readonly), encoding="utf-8")
         command = (
             f'with timeout of {ae["timeout"]} seconds\n'
             f'tell application {json.dumps(ae["app"])} to DoScriptFile {json.dumps(str(runner))}\n'
@@ -139,17 +146,54 @@ def export_layout(scene_path, settings):
     }
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as file:
         json.dump(spec, file)
-    run_jsx(LAYOUT_SCRIPT, {"LAYOUT_SPEC": file.name}, settings)
-    Path(file.name).unlink()
+    try:
+        # Выгрузка только читает: несохранённая после сборки композиция ей не мешает.
+        run_jsx(LAYOUT_SCRIPT, {"LAYOUT_SPEC": file.name}, settings, readonly=True)
+    finally:
+        Path(file.name).unlink()
+
+
+def export_transforms(out, settings, comp="", latest=False):
+    """Выгружает трансформы слоёв композиции до выражений: активной или названной."""
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as file:
+        json.dump({"comp": comp, "latest": latest, "out": str(out)}, file)
+    try:
+        run_jsx(TRANSFORMS_SCRIPT, {"TRANSFORMS_SPEC": file.name}, settings, readonly=True)
+    finally:
+        Path(file.name).unlink()
+
+
+def write_snapshot(scene_path, settings):
+    """Снимок сборки для diff: слои только что собранной композиции и adjust сцены на момент сборки."""
+    scene = read_json(scene_path)
+    out = snapshot_path(scene_path)
+    export_transforms(out, settings, scene["comp"]["name"], latest=True)
+    data = read_json(out)
+    data["scene_hash"] = file_hash(scene_path)
+    data["adjust"] = {item_id(item, n): item["adjust"] for n, item in enumerate(scene["items"]) if item.get("adjust")}
+    out.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def diff(scene_path, settings, comp, write, show_all):
+    """Сравнивает правленую композицию со снимком сборки и печатает короткую сводку."""
+    if not snapshot_path(scene_path).is_file():
+        raise RuntimeError(f"нет снимка сборки {snapshot_path(scene_path).name}: он появляется после ae_run.py build")
+    with tempfile.TemporaryDirectory() as folder:
+        out = Path(folder) / "edited.json"
+        export_transforms(out, settings, comp or "")
+        print(diff_scene(scene_path, read_json(out), settings, write, show_all))
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("command", choices=["build", "script", "review", "apply-review", "open", "layout"])
+    parser.add_argument("command", choices=["build", "script", "review", "apply-review", "open", "layout", "diff"])
     parser.add_argument("path", type=Path, help="сцена, JSX, запись или проект, по команде")
     parser.add_argument("--launch", action="store_true", help="автор разрешил запустить After Effects")
     parser.add_argument("--append-from", type=int, help="для build: дополнить композицию элементами с этого номера")
     parser.add_argument("--video", type=Path, help="папка видео с её настройками")
+    parser.add_argument("--comp", help="для diff: композиция с правками автора, по умолчанию активная")
+    parser.add_argument("--apply", action="store_true", help="для diff: перенести однозначные правки в сцену")
+    parser.add_argument("--all", action="store_true", help="для diff: все строки сводки")
     args = parser.parse_args()
 
     settings = load_settings(args.video) if args.video else settings_for(args.path)
@@ -158,7 +202,11 @@ def main():
             run_jsx(BUILD_SCRIPT, build_values(args.path, settings, args.append_from), settings)
             stamp = {"scene_hash": file_hash(args.path), "built_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
             build_stamp_path(args.path).write_text(json.dumps(stamp, indent=2), encoding="utf-8")
+            write_snapshot(args.path.resolve(), settings)
             export_layout(args.path.resolve(), settings)
+        elif args.command == "diff":
+            diff(args.path.resolve(), settings, args.comp, args.apply, args.all)
+            return
         elif args.command == "layout":
             export_layout(args.path.resolve(), settings)
         elif args.command == "review":

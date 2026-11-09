@@ -90,6 +90,13 @@
     "opaque_percent": 95,
     "min_minutes": 0.5
   },
+  "diff": {
+    "px": 0.5,
+    "scale": 0.002,
+    "degrees": 0.05,
+    "seconds": 0.002,
+    "max_lines": 10
+  },
   "lab": {
     "seconds": 4,
     "part_seconds": 6,

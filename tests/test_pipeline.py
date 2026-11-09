@@ -22,6 +22,8 @@ from view import beat_lines, layout_warnings, motion_warnings, state_lines, weig
 from setup_base import STARTER, create_base
 from voice import chunks, direction_words, eq_filter, keep_take, plain_text, split_directions, tag_errors, text_errors
 from validate import ENGINE_VERSION, check_built, file_hash
+from scene_diff import run as run_diff, snapshot_path
+from ae_run import wrapper as jsx_wrapper
 from validate import check_animation, check_scene, check_timeline
 
 
@@ -1178,6 +1180,126 @@ class Voice(Case):
         f = Fragment(self.video, "F1", settings=self.settings)
         self.assertEqual(f.status("voice"), "approved")
         self.assertEqual(f.next_action()["stage"], "transcript")
+
+
+def layer(index, name, item, pos=(960, 540, 0), scale=(100, 100, 100), rot=0, parent=0, inner="h", pos_keys=None):
+    position = {"keys": pos_keys} if pos_keys else {"v": list(pos)}
+    return {"index": index, "name": name, "item": item, "parent": parent, "video": True, "in": 0, "out": 10,
+            "start": 0, "enabled": True, "inner": inner,
+            "props": {"anchor": {"v": [0, 0, 0]}, "position": position, "scale": {"v": list(scale)},
+                      "rotation": {"v": rot}, "opacity": {"v": 100}}}
+
+
+class SceneDiff(Case):
+    """ae_run.py diff без AE: снимок сборки против выгрузки правленой композиции."""
+
+    def setUp(self):
+        super().setUp()
+        items = [{"id": "bg", "block": "label", "always": True}, {"id": "obj", "block": "label", "at_word": 0},
+                 {"id": "zone", "block": "label", "at_word": 1, "params": {"target": "obj"}},
+                 {"id": "num", "block": "label", "at_word": 2}, {"id": "strip", "block": "label", "at_word": 3}]
+        self.path = self.write("F1.scene.json", self.scene(items=items))
+        snapshot = {"comp": "c", "adjust": {}, "layers": [
+            layer(1, "zone", "zone", (300, 500, 0)), layer(2, "zone label", "zone", (300, 420, 0)),
+            layer(3, "num", "num", (900, 200, 0)), layer(4, "obj", "obj", (300, 500, 0)), layer(5, "obj", "obj", (600, 500, 0)),
+            layer(6, "strip", "strip", pos_keys=[[0, [-200, 900, 0]], [1, [960, 900, 0]]]),
+            layer(7, "bg", "bg"), {"index": 8, "name": "voice", "item": "", "video": False, "props": {}}]}
+        self.write("F1.snapshot.json", snapshot)
+        self.edited = {"comp": "c_copy", "layers": [
+            layer(1, "num", "num", (900, 170, 0), (78, 78, 78)), layer(2, "obj", "obj", (300, 500, 0)),
+            layer(3, "obj", "obj", (600, 500, 0)), layer(4, "zone", "zone", (300, 540, 0)),
+            layer(5, "zone label", "zone", (300, 460, 0)),
+            layer(6, "strip", "strip", scale=(120, 120, 100), pos_keys=[[0, [-200, 900, 0]], [1, [960, 900, 0]]]),
+            layer(7, "bg", "bg"), {"index": 8, "name": "voice", "item": "", "video": False, "props": {}}]}
+
+    def test_summary_is_short_and_finds_edits(self):
+        text = run_diff(self.path, self.edited, self.settings)
+        lines = text.splitlines()
+        self.assertLessEqual(len(lines), 10)
+        self.assertIn("Можно перенести (--apply): 3 эл.", lines[0])
+        self.assertIn("zone: сдвиг (0, +40", text)
+        self.assertIn("под obj", text)
+        self.assertIn("num: сдвиг (0, -30", text)
+        self.assertIn("×0.78", text)
+        self.assertIn("strip: масштаб ×1.2", text)
+        self.assertNotIn("проверить", text)
+
+    def test_apply_writes_adjust_once(self):
+        run_diff(self.path, self.edited, self.settings, write=True)
+        items = {item["id"]: item for item in json.loads(self.path.read_text())["items"]}
+        self.assertEqual(items["zone"]["adjust"], {"offset": [0, 40, 0], "below": "obj"})
+        self.assertEqual(items["num"]["adjust"], {"offset": [0, -30, 0], "scale": 0.78})
+        self.assertEqual(items["strip"]["adjust"], {"scale": 1.2})
+        self.assertNotIn("adjust", items["obj"])
+        again = run_diff(self.path, self.edited, self.settings, write=True)
+        self.assertIn("Правок автора нет", again)
+        items = {item["id"]: item for item in json.loads(self.path.read_text())["items"]}
+        self.assertEqual(items["num"]["adjust"]["scale"], 0.78)
+
+    def test_rebuild_with_adjust_shows_new_edits_only(self):
+        run_diff(self.path, self.edited, self.settings, write=True)
+        snapshot = json.loads(snapshot_path(self.path).read_text())
+        snapshot["adjust"] = {"num": {"offset": [0, -30, 0], "scale": 0.78}}
+        snapshot["layers"] = [one for one in self.edited["layers"]]
+        snapshot_path(self.path).write_text(json.dumps(snapshot))
+        edited = json.loads(json.dumps(self.edited))
+        edited["layers"][0]["props"]["position"]["v"] = [910, 170, 0]
+        run_diff(self.path, edited, self.settings, write=True)
+        items = {item["id"]: item for item in json.loads(self.path.read_text())["items"]}
+        self.assertEqual(items["num"]["adjust"]["offset"], [10, -30, 0])
+
+    def test_unclear_edits_are_only_printed(self):
+        edited = json.loads(json.dumps(self.edited))
+        layers = {one["name"]: one for one in edited["layers"]}
+        layers["strip"]["props"]["scale"]["v"] = [120, 90, 100]
+        layers["bg"]["inner"] = "other"
+        layers["zone label"]["props"]["position"]["v"] = [300, 300, 0]
+        text = run_diff(self.path, edited, self.settings, write=True)
+        self.assertIn("strip: проверить: strip: неравномерный масштаб", text)
+        self.assertIn("bg: проверить: bg: содержимое", text)
+        self.assertIn("слои элемента изменены по-разному", text)
+        items = {item["id"]: item for item in json.loads(self.path.read_text())["items"]}
+        self.assertNotIn("adjust", items["strip"])
+        self.assertEqual(items["zone"]["adjust"], {"below": "obj"})
+
+    def test_child_layer_edit_is_inside(self):
+        self.edited["layers"][4]["parent"] = 4
+        self.edited["layers"][4]["props"]["position"]["v"] = [300, 420, 0]
+        snapshot = json.loads(snapshot_path(self.path).read_text())
+        snapshot["layers"][1]["parent"] = 1
+        snapshot_path(self.path).write_text(json.dumps(snapshot))
+        text = run_diff(self.path, self.edited, self.settings)
+        self.assertNotIn("правка внутри", text)
+        self.edited["layers"][4]["props"]["position"]["v"] = [0, 0, 0]
+        self.assertIn("правка внутри элемента: zone label", run_diff(self.path, self.edited, self.settings))
+
+    def test_keys_moved_unevenly_and_deleted_layers(self):
+        self.edited["layers"][5]["props"]["position"]["keys"][1][1] = [960, 800, 0]
+        del self.edited["layers"][2]
+        text = run_diff(self.path, self.edited, self.settings)
+        self.assertIn("ключи сдвинуты по-разному", text)
+        self.assertIn("удалены слои: obj#2", text)
+
+    def test_no_snapshot(self):
+        snapshot_path(self.path).unlink()
+        with self.assertRaises(FileNotFoundError):
+            run_diff(self.path, self.edited, self.settings)
+
+    def test_validate_adjust(self):
+        self.write("F1.timeline.json", timeline())
+        scene = json.loads(self.path.read_text())
+        scene["items"][2]["adjust"] = {"offset": [1], "scale": -1, "below": "nope", "zoom": 1}
+        self.path.write_text(json.dumps(scene))
+        errors = " ".join(check_scene(self.path, self.settings))
+        for part in ("adjust.offset", "adjust.scale", "adjust.below", "zoom"):
+            self.assertIn(part, errors)
+        scene["items"][2]["adjust"] = {"offset": [0, 40], "scale": 0.8, "rotation": 2, "below": "obj"}
+        self.path.write_text(json.dumps(scene))
+        self.assertFalse([e for e in check_scene(self.path, self.settings) if "adjust" in e])
+
+    def test_readonly_wrapper_ignores_unsaved_project(self):
+        self.assertIn("if (false)", jsx_wrapper("/s.jsx", {}, "^$", "/r.txt", readonly=True))
+        self.assertIn("if (app.project.dirty)", jsx_wrapper("/s.jsx", {}, "^$", "/r.txt"))
 
 
 if __name__ == "__main__":
