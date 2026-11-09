@@ -16,7 +16,7 @@ state.json              состояние этапов
 <f>.animation.json      план анимации
 <f>.scene.json          сцена для движка
 blocks/<id>/            блоки этого видео, главнее блоков базы
-<f>.sounds.json         журнал сборки: звуки и начала элементов
+<f>.sounds.json         журнал сборки: звуки, начала элементов, слои и обрезанные слои
 <f>.layout.json         положение слоёв из AE, большой файл только для view.py
 <f>.build.json          отметка успешной сборки с хэшем сцены
 <f>.snapshot.json       снимок композиции после сборки: эталон для ae_run.py diff, только для Python
@@ -99,7 +99,7 @@ frames/round_N/         кадры, листы и index.json
 
 ## snapshot.json
 
-Снимок, который `ae_run.py build` пишет сразу после сборки: `{ "comp", "scene_hash", "adjust": { "<id>": adjust }, "layers": [{ "index", "name", "item", "parent", "video", "in", "out", "start", "enabled", "inner", "props": { "anchor", "position", "scale", "rotation", "opacity" } }] }`. Значения свойств до выражений: `{ "v": значение }` или `{ "keys": [[время, значение]] }`, раздельная позиция — `{ "dims": [...] }`; `inner` — отпечаток фигур, текста, эффектов и масок. Ту же выгрузку правленой композиции `ae_run.py diff` сравнивает со снимком: слои сопоставляются по элементу (`scene:<id>` в комментарии слоя) и имени, поэтому подходит и копия композиции.
+Снимок, который `ae_run.py build` пишет сразу после сборки: `{ "comp", "scene_hash", "adjust": { "<id>": adjust }, "layers": [{ "index", "name", "item", "parent", "video", "in", "out", "start", "enabled", "inner", "props": { "anchor", "position", "scale", "rotation", "opacity" } }] }`. Значения свойств до выражений: `{ "v": значение }` или `{ "keys": [[время, значение]] }`, раздельная позиция — `{ "dims": [...] }`; `inner` — отпечаток фигур, текста, эффектов и масок. `out` уже учитывает обрезку скрытых слоёв. Ту же выгрузку правленой композиции `ae_run.py diff` сравнивает со снимком: слои сопоставляются по элементу (`scene:<id>` в комментарии слоя) и имени, поэтому подходит и копия композиции.
 
 `beat` — `id` бита плана, `"global"` для фона и общего, или список id, если объект живёт через несколько битов (таблица, которую следующий бит заполняет): такой элемент засчитывается каждому из них. `plan_check.py` (он же внутри `validate.py scene` и `view.py check`) сверяет сцену с `<f>.animation.json`:
 
@@ -110,7 +110,7 @@ frames/round_N/         кадры, листы и index.json
 
 ## sounds.json
 
-Журнал сборки: `{ "sounds": [{ "item", "sound", "event", "start", "end", "animation_start", "animation_end" }], "starts": { "<id элемента>": секунды } }`. Звуки проверяет `view.py sounds`, по `starts` снимает кадры `capture.py`.
+Журнал сборки: `{ "sounds": [{ "item", "sound", "event", "start", "end", "animation_start", "animation_end" }], "starts": { "<id элемента>": секунды }, "layers": { "<id элемента>": [id слоёв AE] }, "trimmed": [{ "item", "layer", "id", "from", "to" }] }`. Звуки проверяет `view.py sounds`, по `starts` снимает кадры `capture.py`. `trimmed` — слои, которые сборка обрезала после окончательного ухода в непрозрачность 0 (настройки `ae.trim_hidden`, `ae.trim_pad`): `id` слоя AE, прежний конец `from` и новый `to`. Дописывание `--append-from` сначала возвращает им `from`, если автор не двигал конец, и после сборки новой части режет заново. Поле необязательное: старые журналы без него работают.
 
 ## state.json
 

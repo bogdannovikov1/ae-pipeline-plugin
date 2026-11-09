@@ -371,4 +371,173 @@ E.restack([bg], [o1, o2], "above");
 assert.deepStrictEqual(stack.map((l) => l.name), ["bg", "o1", "o2", "z1", "z2"], "над верхним слоем");
 E.restack([], [o1], "below");
 
+// Обрезка слоёв, которые окончательно ушли в 0: всё, что может вернуть видимость или читать слой, её запрещает.
+const zero = { speed: 0, influence: 33 };
+function opacityProp(keys, expression) {
+    const prop = Object.create(Property.prototype);
+    Object.assign(prop, {
+        name: "Opacity", propertyType: PropertyType.PROPERTY, propertyValueType: PropertyValueType.OneD,
+        canSetExpression: true, expression: expression || "", expressionEnabled: !!expression, keys: keys.slice(0),
+    });
+    Object.defineProperty(prop, "numKeys", { get: () => prop.keys.length });
+    prop.keyTime = (k) => prop.keys[k - 1][0];
+    prop.keyValue = (k) => prop.keys[k - 1][1];
+    prop.keyOutInterpolationType = (k) => prop.keys[k - 1][2] || KeyframeInterpolationType.BEZIER;
+    prop.keyInInterpolationType = () => KeyframeInterpolationType.BEZIER;
+    prop.keyOutTemporalEase = (k) => [prop.keys[k - 1][3] || zero];
+    prop.keyInTemporalEase = (k) => [prop.keys[k - 1][4] || zero];
+    return prop;
+}
+let nextId = 500;
+function trimLayer(item, name, keys, extra) {
+    const opacity = opacityProp(keys || [], extra && extra.expression);
+    const layer = Object.assign({
+        id: nextId++, name, comment: item === null ? "" : "scene:" + item, hasVideo: true, nullLayer: false,
+        enabled: true, isTrackMatte: false, locked: false, inPoint: 0, outPoint: 30, parent: null, opacity,
+        props: [opacity],
+    }, extra || {});
+    layer.numProperties = layer.props.length;
+    layer.property = (i) => layer.props[i - 1];
+    return layer;
+}
+function exprProp(text) {
+    return Object.assign(Object.create(Property.prototype), {
+        name: "Position", propertyType: PropertyType.PROPERTY, propertyValueType: PropertyValueType.OneD,
+        canSetExpression: true, expression: text, expressionEnabled: true, numKeys: 0,
+    });
+}
+function trimComp(list) {
+    return { numLayers: list.length, layer: (n) => list[n - 1], frameDuration: 0.1, duration: 30 };
+}
+const gone = [[1, 0], [1.5, 100], [4, 100], [4.5, 0]];
+
+assert.strictEqual(E.hiddenAfter(trimLayer("a", "x", gone)), 4.5, "конец последнего ухода в 0");
+assert.strictEqual(E.hiddenAfter(trimLayer("a", "x", [[1, 0], [2, 100]])), null, "виден до конца");
+assert.strictEqual(E.hiddenAfter(trimLayer("a", "x", [[1, 0], [2, 0]])), null, "ни разу не виден: не трогаем");
+assert.strictEqual(E.hiddenAfter(trimLayer("a", "x", [])), null, "без ключей");
+assert.strictEqual(E.hiddenAfter(trimLayer("a", "x", gone, { expression: "value * 0.6" })), 4.5, "умножение на число сохраняет 0");
+assert.strictEqual(E.hiddenAfter(trimLayer("a", "x", gone, { expression: "(value * 0.5) * 0.8;" })), 4.5, "вложенное умножение");
+assert.strictEqual(E.hiddenAfter(trimLayer("a", "x", gone, { expression: "100" })), null, "выражение на opacity: не уверены");
+assert.strictEqual(E.hiddenAfter(trimLayer("a", "x", gone.concat([[6, 0, null, null, { speed: 40 }]]))), null,
+    "кривая между нулями может выйти выше 0");
+assert.strictEqual(E.hiddenAfter(trimLayer("a", "x", gone.concat([[6, 0, KeyframeInterpolationType.HOLD], [7, 0]]))), 4.5);
+
+assert.deepStrictEqual(E.layerRefs('thisComp.layer("box \\"1\\"").position + thisComp.layer(3).scale'),
+    { names: ['box "1"'], indices: [3], unknown: false });
+assert.ok(E.layerRefs("thisComp.layer(index - 1).position").unknown, "ссылка не по имени и не по номеру: читает любой слой");
+assert.ok(!E.layerRefs("thisLayer.position").unknown);
+
+{
+    const plainGone = trimLayer("a", "plain", gone);
+    const back = trimLayer("b", "back", [[1, 0], [1.5, 100], [4, 100], [4.5, 0], [8, 0], [8.5, 100], [10, 100], [10.5, 0]]);
+    const stays = trimLayer("c", "stays", [[1, 0], [1.5, 100]]);
+    const voice = trimLayer(null, "voice", [], { hasVideo: false });
+    const sfx = trimLayer("a", "pop", [], { hasVideo: false });
+    const ended = trimLayer("d", "ended", gone, { outPoint: 4.5 });
+    const list = [plainGone, back, stays, voice, sfx, ended];
+    const cut = E.trimHidden(trimComp(list), [], 0.5);
+    assert.ok(near(plainGone.outPoint, 5), "ушёл в 0: обрезан по концу ухода плюс запас");
+    assert.ok(near(back.outPoint, 11), "уход и возврат: режем только после последнего ухода");
+    assert.strictEqual(stays.outPoint, 30, "видимый до конца не трогаем");
+    assert.strictEqual(voice.outPoint, 30, "голос не трогаем");
+    assert.strictEqual(sfx.outPoint, 30, "звук элемента не трогаем");
+    assert.strictEqual(ended.outPoint, 4.5, "раньше уже обрезанный не удлиняем");
+    assert.deepStrictEqual(cut.map((c) => [c.item, c.layer, c.from, c.to]), [["a", "plain", 30, 5], ["b", "back", 30, 11]]);
+}
+{
+    const parent = trimLayer("a", "parent", gone);
+    const child = trimLayer("b", "child", [[2, 0], [3, 100], [12, 100], [12.5, 0]], { parent });
+    const lone = trimLayer("c", "lone", gone);
+    const keeper = trimLayer("c", "keeper", [[2, 0], [3, 100]], { parent: lone });
+    E.trimHidden(trimComp([parent, child, lone, keeper]), [], 0.5);
+    assert.ok(near(child.outPoint, 13), "ребёнок обрезан по своему уходу");
+    assert.ok(near(parent.outPoint, 13), "родитель не раньше ребёнка");
+    assert.strictEqual(lone.outPoint, 30, "родитель видимого ребёнка остаётся");
+}
+{
+    const rig = trimLayer("move", "rig", [], { nullLayer: true });
+    const a = trimLayer("a", "a", gone, { parent: rig });
+    const b = trimLayer("b", "b", [[1, 0], [2, 100], [6, 100], [6.5, 0]], { parent: rig });
+    const idle = trimLayer("x", "idle null", [], { nullLayer: true });
+    E.trimHidden(trimComp([rig, a, b, idle]), [{ targets: ["a", "b"], layers: [rig] }], 0.5);
+    assert.ok(near(a.outPoint, 7) && near(b.outPoint, 7), "цели move уходят вместе: по последнему уходу набора");
+    assert.ok(near(rig.outPoint, 7), "нуль живёт, пока живут его дети");
+    assert.strictEqual(idle.outPoint, 30, "нуль без детей и читателей не трогаем");
+}
+{
+    const target = trimLayer("cells", "cell", gone);
+    const connector = trimLayer("link", "line", [[9, 0], [9.5, 100]], { inPoint: 9 });
+    const shortMark = trimLayer("mark", "ring", [[2, 0], [2.5, 100], [6, 100], [6.5, 0]], { inPoint: 2 });
+    const target2 = trimLayer("cells2", "cell2", gone);
+    E.trimHidden(trimComp([target, connector, target2, shortMark]), [
+        { targets: ["cells"], layers: [connector] },
+        { targets: ["cells2"], layers: [shortMark] },
+    ], 0.5);
+    assert.strictEqual(target.outPoint, 30, "цель позднего connector, который виден до конца, остаётся");
+    assert.ok(near(target2.outPoint, 7) && near(shortMark.outPoint, 7), "цель живёт, пока живёт пометка на ней");
+}
+{
+    const source = trimLayer("dot", "dot 1", gone);
+    const reader = trimLayer("readout", "label", [[1, 0], [2, 100]], {});
+    reader.props.push(exprProp('var p = thisComp.layer("dot 1").transform.position; p'));
+    reader.numProperties = reader.props.length;
+    const byIndex = trimLayer("dot2", "dot 2", gone);
+    const indexReader = trimLayer("cursor", "cursor", [[1, 0], [2, 100], [8, 100], [8.5, 0]]);
+    indexReader.props.push(exprProp("thisComp.layer(3).toWorld([0, 0, 0])"));
+    indexReader.numProperties = indexReader.props.length;
+    E.trimHidden(trimComp([source, reader, byIndex, indexReader]), [], 0.5);
+    assert.strictEqual(source.outPoint, 30, "слой, который читает выражение видимого слоя, остаётся");
+    assert.ok(near(byIndex.outPoint, 9) && near(indexReader.outPoint, 9), "ссылка по номеру: не раньше читателя");
+}
+{
+    const any = trimLayer("a", "a", gone);
+    const wild = trimLayer("w", "wild", [[1, 0], [2, 100]]);
+    wild.props.push(exprProp("thisComp.layer(index + 1).position"));
+    wild.numProperties = wild.props.length;
+    E.trimHidden(trimComp([any, wild]), [], 0.5);
+    assert.strictEqual(any.outPoint, 30, "выражение читает неизвестный слой: ничего не режем раньше него");
+}
+{
+    const matte = trimLayer("a", "matte", gone, { isTrackMatte: true });
+    const off = trimLayer("a", "off", gone, { enabled: false });
+    const locked = trimLayer("a", "locked", gone, { locked: true });
+    const camera = Object.assign(Object.create(CameraLayer.prototype), trimLayer("cam", "camera", gone));
+    const foreign = trimLayer(null, "author layer", gone);
+    E.trimHidden(trimComp([matte, off, locked, camera, foreign]), [], 0.5);
+    assert.ok([matte, off, locked, camera, foreign].every((l) => l.outPoint === 30),
+        "маски, выключенные, заблокированные, камеры и слои не из сцены не трогаем");
+}
+{
+    PropertyValueType.LAYER_INDEX = 7;
+    const map = trimLayer("a", "map", gone);
+    const user = trimLayer("b", "user", [[1, 0], [2, 100]]);
+    user.props.push(Object.assign(Object.create(Property.prototype), {
+        propertyType: PropertyType.PROPERTY, propertyValueType: 7, value: 1, canSetExpression: false,
+    }));
+    user.numProperties = user.props.length;
+    E.trimHidden(trimComp([map, user]), [], 0.5);
+    assert.strictEqual(map.outPoint, 30, "слой-параметр эффекта видимого слоя остаётся");
+    delete PropertyValueType.LAYER_INDEX;
+}
+{
+    const odd = trimLayer("a", "odd", [[1, 0], [1.5, 100], [4, 100], [4.43, 0]]);
+    E.trimHidden(trimComp([odd]), [], 0.5);
+    assert.ok(near(odd.outPoint, 5), "конец обрезки округлён вверх до кадра");
+}
+{
+    // Дописывание: что обрезала прошлая сборка, возвращается, если автор не двигал конец слоя.
+    const kept = trimLayer("a", "kept", gone, { outPoint: 5 });
+    const moved = trimLayer("b", "moved", gone, { outPoint: 8 });
+    const comp = trimComp([kept, moved]);
+    const restored = E.untrim(comp, [{ id: kept.id, from: 30, to: 5 }, { id: moved.id, from: 30, to: 5 }, { id: 1, from: 30, to: 5 }]);
+    assert.strictEqual(restored, 1);
+    assert.strictEqual(kept.outPoint, 30, "обрезанный сборкой слой вернулся");
+    assert.strictEqual(moved.outPoint, 8, "конец, который автор двигал, не трогаем");
+    // Новая часть берёт старый слой целью и возвращает его ключами: он больше не обрезается.
+    kept.opacity.keys.push([20, 0], [20.5, 100]);
+    const fresh = trimLayer("new", "new", [[20, 0], [20.5, 100]], { inPoint: 20 });
+    E.trimHidden(comp, [{ targets: ["a"], layers: [fresh] }], 0.5);
+    assert.strictEqual(kept.outPoint, 30, "старый слой, который снова нужен, не обрезан");
+}
+
 console.log("Движок в порядке");

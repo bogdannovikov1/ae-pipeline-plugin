@@ -248,6 +248,24 @@ def sound_warnings(sounds, timing):
     return warnings
 
 
+def visible_until(layout):
+    """До какого момента слой виден по выборкам tracks: после ухода в 0 он уже ничего не перекрывает,
+    даже если его outPoint дальше (слой не обрезан). Ключ (элемент, слой), у одноимённых слоёв самый поздний конец."""
+    ends = {}
+    for track in layout.get("tracks") or []:
+        samples = sorted(track["samples"])
+        shown = [index for index, s in enumerate(samples) if s[1] > 0 and (len(s) < 7 or s[6])]
+        if not shown:
+            end = track["in"]
+        elif shown[-1] + 1 < len(samples):
+            end = samples[shown[-1] + 1][0]
+        else:
+            end = track["out"]
+        key = (track["item"], track["layer"])
+        ends[key] = max(ends.get(key, end), end)
+    return ends
+
+
 def layout_warnings(layout, cfg):
     """Находит выход за безопасное поле и наложение текста на текст. Большой JSON читает скрипт, агент видит итог."""
     width, height = layout["width"], layout["height"]
@@ -264,7 +282,9 @@ def layout_warnings(layout, cfg):
         if outside and box["item"] not in reported:
             reported.add(box["item"])
             warnings.append(f"{box['item']}: {box['layer']} вне безопасного поля на {box['time']:.2f} с")
-    texts = [box for box in objects if box["text"]]
+    ends = visible_until(layout)
+    texts = [dict(box, until=min(box["until"], ends.get((box["item"], box["layer"]), box["until"])))
+             for box in objects if box["text"]]
     for index, first in enumerate(texts):
         for second in texts[index + 1:]:
             together = max(first["time"], second["time"]) < min(first["until"], second["until"])

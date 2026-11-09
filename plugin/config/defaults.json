@@ -32,6 +32,8 @@
     "review_height": 1080,
     "review_fps": 30,
     "keep_builds": 1,
+    "trim_hidden": true,
+    "trim_pad": 0.5,
     "apps_dir": "/Applications",
     "ready_check_timeout": 20,
     "ready_check_pause": 3,

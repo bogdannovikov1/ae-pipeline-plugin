@@ -709,6 +709,226 @@ $.global.Engine = (function () {
         return layers;
     };
 
+    // ---- Layers that played their part. A layer whose opacity went to 0 for good is cut a little after
+    // that exit, so AE stops computing it. Anything that may still need it keeps it: a child, an expression
+    // or an effect that reads it, a later item that targets its item. When in doubt the layer stays.
+    var NEAR = 1e-4;
+
+    // An expression on opacity that only scales the keys ("value * 0.6", nested in brackets) keeps 0 at 0.
+    function scalesValue(text) {
+        var bare = String(text).replace(/\/\/[^\n]*/g, "").replace(/[\s();]/g, "");
+        return /^value(\*\d*\.?\d+)*$/.test(bare);
+    }
+
+    // No overshoot after a key: linear, hold, or a bezier with zero speed on both sides of the segment.
+    function flatAfter(prop, k) {
+        var type = prop.keyOutInterpolationType(k);
+        if (type === KeyframeInterpolationType.LINEAR || type === KeyframeInterpolationType.HOLD) {
+            return true;
+        }
+        var out = prop.keyOutTemporalEase(k);
+        var into = prop.keyInTemporalEase(k + 1);
+        return Math.abs(out[0].speed) < NEAR && Math.abs(into[0].speed) < NEAR;
+    }
+
+    // When the last exit of the layer to opacity 0 ends: the first zero key after the last visible one,
+    // with only zero keys after it. null: the layer stays visible, never shows, or its opacity is not plain keys.
+    E.hiddenAfter = function (layer) {
+        var prop = layer.opacity;
+        if (!prop || !prop.numKeys) {
+            return null;
+        }
+        if (prop.expressionEnabled && prop.expression && !scalesValue(prop.expression)) {
+            return null;
+        }
+        var count = prop.numKeys;
+        var last = 0;
+        for (var k = 1; k <= count; k++) {
+            if (prop.keyValue(k) > NEAR) {
+                last = k;
+            }
+        }
+        if (last === 0 || last === count) {
+            return null;
+        }
+        for (var z = last + 1; z < count; z++) {
+            if (!flatAfter(prop, z)) {
+                return null;
+            }
+        }
+        return prop.keyTime(last + 1);
+    };
+
+    // Layers an expression names: thisComp.layer("name") or layer(index). unknown: some layer( call whose
+    // argument is not a plain name or number, so any layer may be read.
+    E.layerRefs = function (text) {
+        var found = { names: [], indices: [], unknown: false };
+        var plain = /layer\(\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\d+)\s*\)/g;
+        var calls = String(text).match(/layer\s*\(/g);
+        var parsed = 0;
+        var match;
+        while ((match = plain.exec(text)) !== null) {
+            parsed += 1;
+            var arg = match[1];
+            if (/^\d+$/.test(arg)) {
+                found.indices.push(parseInt(arg, 10));
+            } else {
+                found.names.push(arg.substr(1, arg.length - 2).replace(/\\(.)/g, "$1"));
+            }
+        }
+        found.unknown = (calls ? calls.length : 0) > parsed;
+        return found;
+    };
+
+    function eachProperty(group, fn) {
+        for (var n = 1; n <= group.numProperties; n++) {
+            var p = group.property(n);
+            if (!p) {
+                continue;
+            }
+            if (p.propertyType === PropertyType.PROPERTY) {
+                fn(p);
+            } else {
+                eachProperty(p, fn);
+            }
+        }
+    }
+
+    // Cuts hidden layers of scene items at the end of their last exit plus pad, rounded up to a frame.
+    // links: per item its targets and its layers (a later item that targets an earlier one).
+    // Returns what was cut: { item, layer, id, from, to }.
+    E.trimHidden = function (comp, links, pad) {
+        var records = [];
+        var byId = {};
+        var byIndex = {};
+        var byName = {};
+        var anyone = [];
+        var i;
+        var n;
+        for (n = 1; n <= comp.numLayers; n++) {
+            var layer = comp.layer(n);
+            var r = { layer: layer, deps: [], end: Infinity };
+            var scene = /^scene:/.test(String(layer.comment));
+            var plain = layer.hasVideo && !(layer instanceof CameraLayer) && !(layer instanceof LightLayer) &&
+                layer.enabled !== false && !layer.isTrackMatte && !layer.locked;
+            if (scene && plain && layer.nullLayer) {
+                // A null draws nothing: it lives as long as what hangs on it or reads it.
+                r.end = -Infinity;
+                r.derived = true;
+            } else if (scene && plain) {
+                var hidden = E.hiddenAfter(layer);
+                r.end = hidden === null ? Infinity : hidden + pad;
+            }
+            records.push(r);
+            byId[layer.id] = r;
+            byIndex[n] = r;
+            byName[layer.name] = (byName[layer.name] || []).concat([r]);
+        }
+        function need(target, owner) {
+            if (target && target !== owner) {
+                target.deps.push(owner);
+            }
+        }
+        for (i = 0; i < records.length; i++) {
+            var owner = records[i];
+            if (owner.layer.parent) {
+                need(byId[owner.layer.parent.id], owner);
+            }
+            eachProperty(owner.layer, function (p) {
+                if (PropertyValueType.LAYER_INDEX !== undefined && p.propertyValueType === PropertyValueType.LAYER_INDEX) {
+                    need(byIndex[p.value], owner);
+                }
+                if (!p.canSetExpression || !p.expressionEnabled || !p.expression) {
+                    return;
+                }
+                var refs = E.layerRefs(p.expression);
+                if (refs.unknown) {
+                    anyone.push(owner);
+                }
+                for (var a = 0; a < refs.indices.length; a++) {
+                    need(byIndex[refs.indices[a]], owner);
+                }
+                for (var b = 0; b < refs.names.length; b++) {
+                    var named = byName[refs.names[b]] || [];
+                    for (var c = 0; c < named.length; c++) {
+                        need(named[c], owner);
+                    }
+                }
+            });
+        }
+        for (i = 0; i < (links || []).length; i++) {
+            var link = links[i];
+            for (var t = 0; t < link.targets.length; t++) {
+                for (n = 1; n <= comp.numLayers; n++) {
+                    if (comp.layer(n).comment !== "scene:" + link.targets[t]) {
+                        continue;
+                    }
+                    for (var l = 0; l < link.layers.length; l++) {
+                        var user = link.layers[l];
+                        if (user && user.hasVideo && !(user instanceof CameraLayer) && !(user instanceof LightLayer)) {
+                            need(byIndex[n], byId[user.id]);
+                        }
+                    }
+                }
+            }
+        }
+        // Where a layer stops being needed: its cut if it gets one, else its out point.
+        function stop(r) {
+            return Math.min(r.end, r.layer.outPoint);
+        }
+        var changed = true;
+        for (var pass = 0; changed && pass <= records.length + 1; pass++) {
+            changed = false;
+            for (i = 0; i < records.length; i++) {
+                var rec = records[i];
+                if (rec.end === Infinity) {
+                    continue;
+                }
+                var deps = rec.deps.concat(anyone);
+                for (var d = 0; d < deps.length; d++) {
+                    if (deps[d] !== rec && stop(deps[d]) > rec.end) {
+                        rec.end = stop(deps[d]);
+                        changed = true;
+                    }
+                }
+            }
+        }
+        var frame = comp.frameDuration;
+        var cut = [];
+        for (i = 0; i < records.length; i++) {
+            var one = records[i];
+            if (one.end === Infinity || one.end === -Infinity || changed) {
+                continue;
+            }
+            var to = Math.ceil(one.end / frame - NEAR) * frame;
+            var target = one.layer;
+            if (to < target.outPoint - NEAR && to > target.inPoint + NEAR) {
+                cut.push({ item: String(target.comment).substr(6), layer: target.name, id: target.id,
+                    from: Math.round(target.outPoint * 1000) / 1000, to: Math.round(to * 1000) / 1000 });
+                target.outPoint = to;
+            }
+        }
+        return cut;
+    };
+
+    // Before an append: layers cut by the last build get their old out point back, unless the author moved it,
+    // so the new part can use them again. The new build cuts what is still hidden.
+    E.untrim = function (comp, trimmed) {
+        var byId = {};
+        var restored = 0;
+        for (var n = 1; n <= comp.numLayers; n++) {
+            byId[comp.layer(n).id] = comp.layer(n);
+        }
+        for (var i = 0; i < (trimmed || []).length; i++) {
+            var layer = byId[trimmed[i].id];
+            if (layer && Math.abs(layer.outPoint - trimmed[i].to) < 1e-3 && trimmed[i].from > layer.outPoint) {
+                layer.outPoint = trimmed[i].from;
+                restored += 1;
+            }
+        }
+        return restored;
+    };
+
     // ---- Append over a frozen part. Layers are known by their persistent AE id.
     E.layerIds = function (comp) {
         var ids = {};
