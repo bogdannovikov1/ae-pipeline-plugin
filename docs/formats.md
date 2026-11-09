@@ -3,7 +3,11 @@
 Все файлы одного фрагмента лежат в `<видео>/fragments/<f>/`.
 
 ```text
-<f>.wav                 запись
+<f>.wav                 запись: готовая или озвученная из текста
+<f>.script.txt          текст автора как есть (только для озвучки)
+<f>.voice.txt           тот же текст с тегами интонации, вход ElevenLabs
+<f>.voice_raw.wav       озвучка без EQ
+<f>.take<N>.wav         прошлые дубли озвучки
 state.json              состояние этапов
 <f>.timeline.json       транскрипт
 <f>.notes.md            заметки по транскрипту
@@ -21,6 +25,10 @@ frames/round_N/         кадры, листы и index.json
 <f>.base_proposals.md   предложения для базы
 <f>.*.extended.json     копии до отмены расширения
 ```
+
+## voice.txt
+
+Текст автора без изменений слов, по фразе на строку. В начале строки — теги в квадратных скобках через запятую, только из `voice.allowed_tags`: `[slightly faster, thoughtful] Текст... дальше.` Проверка: `voice.py check`, она же идёт при `done voice`.
 
 ## timeline.json
 

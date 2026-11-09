@@ -15,10 +15,11 @@
 
 ## Пайплайн
 
-Вход: `/ae-video:make` ведёт всё видео, в других моделях `brief.py make <видео> <фрагмент>`. Отдельные команды запускают один этап и соблюдают те же ворота: `/ae-video:transcript`, `:plan`, `:animate`, `:review`, `:base`, `:block`. Навык `make` оркестрирует, `pipeline.py` хранит состояние и не пускает дальше, агенты и скрипты работают.
+Вход: `/ae-video:make` ведёт всё видео, в других моделях `brief.py make <видео> <фрагмент>`. Новое видео начинается вопросом: озвучить текст голосом автора или взять готовую запись. Отдельные команды запускают один этап и соблюдают те же ворота: `/ae-video:voice`, `/ae-video:transcript`, `:plan`, `:animate`, `:review`, `:base`, `:block`. Навык `make` оркестрирует, `pipeline.py` хранит состояние и не пускает дальше, агенты и скрипты работают.
 
 | Этап | Исполнитель | Результат | Ревью |
 |---|---|---|---|
+| `voice` | оркестратор, навык `voice` | `<f>.voice.txt`, `<f>.wav` через ElevenLabs и EQ | автор слушает; у готовой записи этап пропущен |
 | `transcript` | `transcriber` | `<f>.timeline.json`, `<f>.notes.md`, `<f>.aep` | агент спрашивает и открывает AE с маркерами, автор правит, затем заморозка |
 | `plan` | `director` (Opus, средние усилия) | `<f>.animation.json`: биты с `id` и утверждёнными `blocks` | автор в чате |
 | `build` | `animator` | `<f>.scene.json`, композиция | автор решает про предревью |
@@ -65,7 +66,7 @@ plugin/                           то, что устанавливается
   config/pipeline.json            этапы и их зависимости
   config/sound_library.json       события звука, роли и папки библиотеки звуков
   skills/make/                    оркестратор
-  skills/setup, transcript, plan, animate, review, base, block/  отдельные команды автора
+  skills/setup, voice, transcript, plan, animate, review, base, block/  отдельные команды автора
   rules.md                        жёсткие правила для всех ролей и моделей
   skills/montage-fundamentals/    законы монтажа, цвета, типографики, движения
   skills/base-structure/          устройство базы для агентов
@@ -80,6 +81,7 @@ plugin/                           то, что устанавливается
     ae_run.py, capture.py         запуск AE, сборка, съёмка кадров
     transcribe, refine_timings, approve_transcript, extend_timeline  транскрипт
     base_index, base_scan, sound_measure, setup_base  работа с базой
+    voice.py                      голос из текста: теги, ElevenLabs, EQ через ffmpeg, дубли
     sound_library.py              библиотека звуков-кандидатов: папки, измерения, прослушка, черновик токенов
     block_lab.py                  песочница нового блока: демо, правка чисел, варианты, перенос в базу
     settings.py, doctor.py        настройки и проверка компьютера

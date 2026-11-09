@@ -1,6 +1,22 @@
 {
   "stages": [
     {
+      "id": "voice",
+      "title": "Голос из текста",
+      "executor": "orchestrator",
+      "needs": [],
+      "inputs": [
+        "{f}.voice.txt"
+      ],
+      "outputs": [
+        "{f}.wav"
+      ],
+      "validate": "voice",
+      "track_outputs": false,
+      "skip_if_audio": true,
+      "review": "author"
+    },
+    {
       "id": "transcript",
       "title": "Транскрипт",
       "executor": "transcriber",

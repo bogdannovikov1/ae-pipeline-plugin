@@ -9,6 +9,7 @@
 import argparse
 import hashlib
 import json
+import shutil
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -42,14 +43,33 @@ class Fragment(ExtensionMixin, RoundsMixin):
         self.state = json.loads(self.path.read_text(encoding="utf-8")) if self.path.is_file() else None
         if self.state:
             # Фрагмент начат до появления нового этапа: этап встаёт в очередь, начатое не меняется.
+            # Этап озвучки у фрагмента с готовой записью не нужен: он считается пропущенным.
             for stage in self.stages:
-                self.state["stages"].setdefault(stage["id"], {"status": "pending", "note": None})
+                if stage["id"] not in self.state["stages"]:
+                    self.state["stages"][stage["id"]] = self.skipped_record(stage) if stage.get("skip_if_audio") else {"status": "pending", "note": None}
 
-    def create(self, audio=None):
+    def skipped_record(self, stage):
+        return {"status": "approved", "note": None, "skipped": True,
+                "inputs": self.hashes(stage["inputs"]), "outputs": self.hashes(stage["outputs"])}
+
+    def create(self, audio=None, from_text=False, audio_from=None):
+        """Начинает фрагмент. from_text: записи ещё нет, первым идёт этап озвучки.
+        audio_from: перенести готовую запись в папку фрагмента."""
         if self.state:
             raise PipelineError(f"Фрагмент уже начат: {self.path}")
         self.folder.mkdir(parents=True, exist_ok=True)
-        if not audio:
+        if audio_from:
+            source = Path(audio_from).expanduser()
+            if not source.is_file() or source.suffix.lower() not in AUDIO_TYPES:
+                raise PipelineError(f"Нет записи: {source}")
+            target = self.folder / f"{self.name}{source.suffix.lower()}"
+            if target.exists():
+                raise PipelineError(f"В фрагменте уже есть запись: {target}")
+            shutil.move(str(source), str(target))
+            audio = target.name
+        if from_text:
+            audio = f"{self.name}.wav"
+        elif not audio:
             found = [p for p in sorted(self.folder.glob(f"{self.name}.*")) if p.suffix.lower() in AUDIO_TYPES]
             if not found:
                 raise PipelineError(f"Положите запись в {self.folder}/{self.name}.wav или укажите --audio")
@@ -62,6 +82,10 @@ class Fragment(ExtensionMixin, RoundsMixin):
             "parts": [],
             "stages": {stage["id"]: {"status": "pending", "note": None} for stage in self.stages},
         }
+        if not from_text:
+            for stage in self.stages:
+                if stage.get("skip_if_audio"):
+                    self.state["stages"][stage["id"]] = self.skipped_record(stage)
         self.save()
 
     def save(self):
@@ -174,7 +198,7 @@ class Fragment(ExtensionMixin, RoundsMixin):
             if not (self.folder / name).is_file():
                 errors.append(f"нет файла {name}")
         if not errors and stage.get("validate"):
-            names = {"timeline": f"{self.name}.timeline.json"}
+            names = {"timeline": f"{self.name}.timeline.json", "voice": f"{self.name}.voice.txt"}
             path = self.folder / self.names(stage["outputs"])[0]
             errors = run_check(stage["validate"], path, self.folder, names, self.settings, final)
             if not errors and stage.get("needs_build"):
@@ -322,6 +346,8 @@ def main():
     parser.add_argument("fragment", help="имя фрагмента")
     parser.add_argument("stage", nargs="?", help="этап для start, done, approve, reject, skip, finish")
     parser.add_argument("--audio", help="для init и extend: имя файла записи в папке фрагмента")
+    parser.add_argument("--audio-from", help="для init: перенести готовую запись из этого пути в папку фрагмента")
+    parser.add_argument("--from-text", action="store_true", help="для init: записи нет, голос будет озвучен из текста")
     parser.add_argument("--note", help="для reject: что исправить")
     parser.add_argument("--force", action="store_true", help="для start: пересобрать этап с ручными правками")
     args = parser.parse_args()
@@ -329,7 +355,7 @@ def main():
     fragment = Fragment(args.video, args.fragment)
     try:
         if args.command == "init":
-            fragment.create(args.audio)
+            fragment.create(args.audio, args.from_text, args.audio_from)
             result = fragment.next_action()
             # Инструкция видео для любой модели: где плагин, база и как идти по этапам.
             from brief import write_agents_md

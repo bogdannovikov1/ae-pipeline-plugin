@@ -20,6 +20,7 @@ from sound_measure import trailing_start
 from sound_library import classify, hit_and_loudness, init as init_library, load_scheme, place_hits, propose
 from view import beat_lines, layout_warnings, motion_warnings, state_lines, weight_warnings, scene_warnings, sound_log_path, sound_warnings, review_lines, scene_lines, text_lines, timing_warnings
 from setup_base import STARTER, create_base
+from voice import chunks, eq_filter, keep_take, plain_text, tag_errors, text_errors
 from validate import ENGINE_VERSION, check_built, file_hash
 from validate import check_animation, check_scene, check_timeline
 
@@ -1092,6 +1093,81 @@ class Brief(Case):
         write_agents_md(self.video, self.settings)
         self.assertEqual(path.read_text(), first)
         self.assertIsNone(write_agents_md(self.video, merge(self.settings, {"agents_file": ""})))
+
+
+class Voice(Case):
+    """Голос из текста: теги, EQ, нарезка, дубли и место этапа в конвейере. Без сети."""
+
+    def test_only_allowed_tags(self):
+        allowed = ["slightly faster", "thoughtful", "short pause", "emphasized"]
+        self.assertEqual(tag_errors("[slightly faster, thoughtful] Текст... дальше.", allowed), [])
+        errors = tag_errors("Норм.\n[angry] Текст.\n[thoughtful Текст", allowed)
+        self.assertEqual(errors, ["строка 2: тег «angry» не разрешён", "строка 3: незакрытая квадратная скобка"])
+        self.assertEqual(plain_text("[short pause] Это  O(1)."), "Это O(1).")
+
+    def test_formulas_must_be_spoken(self):
+        cfg = load_settings(user_path=self.root / "none")["voice"]
+        cfg = dict(cfg, spoken_forms={"O(1)": "О от единицы"})
+        errors = text_errors("[thoughtful] Сложность O(1) и O(n).\nО от единицы.", cfg)
+        self.assertEqual(len(errors), 2)
+        self.assertIn("«О от единицы»", errors[0])
+        self.assertEqual(text_errors("[thoughtful] Сложность О от единицы.", cfg), [])
+
+    def test_eq_filter(self):
+        self.assertEqual(eq_filter([{"freq": 2434, "gain": -6.2, "q": 1.4}, {"freq": 3888, "gain": -9.0, "q": 0.9}]),
+                         "equalizer=f=2434:t=q:w=1.4:g=-6.2,equalizer=f=3888:t=q:w=0.9:g=-9.0")
+
+    def test_chunks_respect_limit_and_keep_text(self):
+        text = "Первая строка.\n\nВторая строка. Ещё предложение. И ещё одно.\nТретья."
+        pieces = chunks(text, 30)
+        self.assertTrue(all(len(p) <= 30 for p in pieces))
+        self.assertEqual(" ".join(" ".join(pieces).split()), " ".join(text.split()))
+
+    def test_previous_take_is_kept(self):
+        out = self.write("F1.wav", "first")
+        self.assertEqual(keep_take(out).name, "F1.take1.wav")
+        self.write("F1.wav", "second")
+        self.assertEqual(keep_take(out).name, "F1.take2.wav")
+        self.assertIsNone(keep_take(out))
+
+    def test_init_from_text_starts_with_voice(self):
+        (self.dir / "F1.wav").unlink()
+        f = Fragment(self.video, "F1", settings=self.settings)
+        f.create(from_text=True)
+        self.assertEqual(f.state["audio"], "F1.wav")
+        self.assertEqual(f.next_action()["stage"], "voice")
+        f.start("voice")
+        self.write("F1.voice.txt", "[angry] Текст.")
+        self.write("F1.wav", "audio")
+        with self.assertRaises(PipelineError):
+            f.done("voice")
+        self.write("F1.voice.txt", "[thoughtful] Текст.")
+        f.done("voice")
+        f.approve("voice")
+        self.assertEqual(f.next_action()["stage"], "transcript")
+
+    def test_recorded_audio_skips_voice(self):
+        f = self.fragment()
+        self.assertTrue(f.state["stages"]["voice"]["skipped"])
+        self.assertEqual(f.next_action()["stage"], "transcript")
+
+    def test_audio_from_moves_file(self):
+        (self.dir / "F1.wav").unlink()
+        source = self.root / "take.WAV"
+        source.write_text("audio")
+        f = Fragment(self.video, "F1", settings=self.settings)
+        f.create(audio_from=source)
+        self.assertFalse(source.exists())
+        self.assertTrue((self.dir / "F1.wav").is_file())
+        self.assertEqual(f.next_action()["stage"], "transcript")
+
+    def test_old_state_without_voice_skips_it(self):
+        f = self.fragment()
+        del f.state["stages"]["voice"]
+        f.save()
+        f = Fragment(self.video, "F1", settings=self.settings)
+        self.assertEqual(f.status("voice"), "approved")
+        self.assertEqual(f.next_action()["stage"], "transcript")
 
 
 if __name__ == "__main__":

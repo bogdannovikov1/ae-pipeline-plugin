@@ -5,6 +5,7 @@ import json
 import platform
 import re
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -40,6 +41,10 @@ def main():
     if (base / "base.json").is_file():
         needed = json.loads((base / "base.json").read_text(encoding="utf-8")).get("engine", 1)
         checks.append((f"движок плагина {ENGINE_VERSION} подходит базе (нужен {needed})", needed == ENGINE_VERSION, "запущена устаревшая копия плагина или база новее: обновите плагин"))
+    voice = settings.get("voice", {})
+    if voice.get("voice_name"):
+        found = subprocess.run(["security", "find-generic-password", "-s", voice["keychain_service"]], capture_output=True).returncode == 0
+        checks.append(("ключ ElevenLabs в Связке ключей", found, f'security add-generic-password -U -a "$USER" -s {voice["keychain_service"]} -w'))
     if (base / "tokens.json").is_file():
         for font in base_fonts(json.loads((base / "tokens.json").read_text(encoding="utf-8"))):
             checks.append((f"шрифт {font}", has_font(font), "установите шрифт базы"))

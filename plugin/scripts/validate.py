@@ -193,6 +193,12 @@ def run_check(kind, path, folder, names, settings=None, final=False):
         return check_scene(path, settings)
     if kind == "check":
         return check_report(path)
+    if kind == "voice":
+        from voice import text_errors
+        text = folder / names["voice"]
+        if not text.is_file():
+            return [f"нет текста озвучки {names['voice']}"]
+        return text_errors(text.read_text(encoding="utf-8"), (settings or {}).get("voice", {"allowed_tags": []}))
     raise ValueError(f"Неизвестная проверка: {kind}")
 
 

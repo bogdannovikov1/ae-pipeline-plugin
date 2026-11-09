@@ -3,6 +3,8 @@
   "base": "starter",
   "labs_dir": "~/Documents/ae-video/labs",
   "sound_library_dir": "~/Documents/ae-video/sound_library",
+  "videos_dir": "~/Documents/ae-video/videos",
+  "first_fragment": "01",
   "agents_file": "AGENTS.md",
   "transcribe": {
     "model": "mlx-community/whisper-large-v3-turbo",
@@ -93,5 +95,39 @@
       "idle",
       "attach"
     ]
+  },
+  "voice": {
+    "api_url": "https://api.elevenlabs.io",
+    "keychain_service": "ae-video-elevenlabs",
+    "model": "eleven_v4",
+    "voice_name": "",
+    "voice_settings": {
+      "stability": 0.5
+    },
+    "allowed_tags": [
+      "slightly faster",
+      "thoughtful",
+      "short pause",
+      "emphasized"
+    ],
+    "tag_hints": {
+      "slightly faster": "перечисление, пояснение, связки",
+      "thoughtful": "вопрос, вывод, размышление",
+      "short pause": "смена мысли, пауза перед важным",
+      "emphasized": "главное утверждение"
+    },
+    "spoken_forms": {},
+    "notation_pattern": "[A-Za-zА-Яа-яЁё]\\s*\\([^()]*\\)|[²³√∑∫≤≥≠×÷^]",
+    "formats": [
+      "pcm_44100",
+      "mp3_44100_192"
+    ],
+    "pcm_rate": 44100,
+    "max_chars": 2500,
+    "timeout": 180,
+    "sample_rate": 48000,
+    "codec": "pcm_s24le",
+    "eq": [],
+    "search_page_size": 100
   }
 }

@@ -96,7 +96,8 @@ class ExtensionMixin:
         })
         self.state["rounds"] = 0
         for stage in self.stages:
-            self.state["stages"][stage["id"]] = {"status": "pending", "note": None}
+            # Новая часть пришла записью: озвучка из текста ей не нужна.
+            self.state["stages"][stage["id"]] = self.skipped_record(stage) if stage.get("skip_if_audio") else {"status": "pending", "note": None}
         self.save()
 
     def statuses_before(self, part):
@@ -170,6 +171,9 @@ class ExtensionMixin:
         self.state["parts"].pop()
         self.state["rounds"] = 0
         for stage in self.stages:
+            if stage.get("skip_if_audio") and stage["id"] not in statuses:
+                self.state["stages"][stage["id"]] = self.skipped_record(stage)
+                continue
             status = statuses.get(stage["id"], "pending")
             self.state["stages"][stage["id"]] = {"status": "pending", "note": None}
             if status in ("approved", "review"):
