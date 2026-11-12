@@ -398,4 +398,41 @@ assert.strictEqual(springLayer.position.tangents, sk.values.length, "прямо�
 assert.ok(springLayer.threeDLayer && !/exp|cos/.test(springLayer.position.expression), "в выражении только плавание");
 assert.ok(/^value \+/.test(springLayer.position.expression));
 
+// adjust.layers: ключи автора ставятся заново со временем от начала элемента и изгибом.
+global.KeyframeEase = function (speed, influence) { this.speed = speed; this.influence = influence; };
+function editProp(value, keys) {
+    return {
+        value, keys: keys || [], curves: {}, isSpatial: true,
+        get numKeys() { return this.keys.length; },
+        removeKey(k) { this.keys.splice(k - 1, 1); },
+        setValue(v) { this.value = v; },
+        valueAtTime() { return this.value; },
+        setValuesAtTimes(t, v) { this.keys = t.map((time, n) => [time, v[n]]); },
+        nearestKeyIndex(t) { return this.keys.findIndex((k) => k[0] === t) + 1; },
+        setInterpolationTypeAtKey(k, a, b) { this.curves[k] = { i: [a, b] }; },
+        setTemporalEaseAtKey(k, a, b) { this.curves[k].e = [a, b]; },
+        setSpatialTangentsAtKey(k, a, b) { this.curves[k].s = [a, b]; },
+    };
+}
+function editLayer(name, index, props) {
+    return { name, index, hasVideo: true, property: () => ({ property: (n) => props[n] }) };
+}
+const pos = editProp([0, 0, 0], [[1, [5, 5, 0]]]);
+const op = editProp(100);
+const second = editLayer("chip", 3, { "ADBE Position": pos, "ADBE Opacity": op });
+const first = editLayer("chip", 2, { "ADBE Position": editProp([1, 1, 0]) });
+const lost = E.layerEdits([second, first, { name: "beep", index: 1, hasVideo: false }], {
+    "chip#2": {
+        position: { keys: [[0.5, [10, 20], { i: [6613, 6612], e: [[[0, 33]], [[0, 80]]], s: [[0, 0, 0], [1, 0, 0]] }], [1, [30, 20, 0]]] },
+        opacity: { v: 50 },
+    },
+    "gone": { opacity: { v: 0 } },
+}, 2);
+assert.deepStrictEqual(lost, ["gone"], "потерянный слой назван");
+assert.deepStrictEqual(pos.keys, [[2.5, [10, 20, 0]], [3, [30, 20, 0]]], "старые ключи убраны, время от начала элемента");
+assert.deepStrictEqual(pos.curves[1].i, [6613, 6612]);
+assert.strictEqual(pos.curves[1].e[1][0].influence, 80, "изгиб ключа");
+assert.deepStrictEqual(pos.curves[1].s[1], [1, 0, 0], "касательные пути");
+assert.strictEqual(op.value, 50, "значение без ключей");
+
 console.log("Движок в порядке");

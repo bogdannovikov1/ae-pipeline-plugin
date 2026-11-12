@@ -69,7 +69,7 @@ def values_of(prop):
     if prop is None:
         return None
     if "keys" in prop:
-        return [(time, value) for time, value in prop["keys"]]
+        return [(key[0], key[1]) for key in prop["keys"]]
     return [(None, prop.get("v"))]
 
 
@@ -90,7 +90,7 @@ def shifted(prop, dt):
         return prop
     result = dict(prop)
     if "keys" in prop:
-        result["keys"] = [[time - dt, value] for time, value in prop["keys"]]
+        result["keys"] = [[key[0] - dt] + list(key[1:]) for key in prop["keys"]]
     if "dims" in prop:
         result["dims"] = [shifted(one, dt) for one in prop["dims"]]
     return result
@@ -222,11 +222,40 @@ def changed(before, after, tol):
                for (_, a), (_, b) in zip(old, new))
 
 
-def layer_change(name, old, new, tol, parents):
-    """Правки одного слоя: {offset, scale, rotation}, неоднозначные пометки и сдвиг слоя по времени.
+PROP_NAMES = {"position": "позиция", "scale": "масштаб", "rotation": "поворот", "opacity": "непрозрачность",
+              "anchor": "опорная точка"}
+CHANGE_PROP = {"offset": "position", "scale": "scale", "rotation": "rotation"}
 
-    Слой, который целиком передвинули по времени, сравнивается с ключами, сдвинутыми обратно."""
-    found, notes = {}, []
+
+def curve_changed(before, after, tol):
+    """Изменён ли изгиб ключей: интерполяция, ease или касательные пути. Время и значения сверяются отдельно."""
+    old, new = (before or {}).get("keys"), (after or {}).get("keys")
+    if not old or not new or len(old) != len(new):
+        return False
+
+    def flat(value):
+        if isinstance(value, list):
+            return [x for one in value for x in flat(one)]
+        return [value] if isinstance(value, (int, float)) else []
+
+    for a, b in zip(old, new):
+        ca, cb = (a[2] if len(a) > 2 else None), (b[2] if len(b) > 2 else None)
+        if not ca or not cb:
+            continue
+        if ca.get("i") != cb.get("i"):
+            return True
+        x, y = flat([ca.get("e"), ca.get("s")]), flat([cb.get("e"), cb.get("s")])
+        if len(x) != len(y) or any(abs(p - q) > tol["px"] for p, q in zip(x, y)):
+            return True
+    return False
+
+
+def layer_change(name, old, new, tol, parents):
+    """Правки одного слоя: {offset, scale, rotation}, пометки, сдвиг по времени, свойства для замены целиком.
+
+    Слой, который целиком передвинули по времени, сравнивается с ключами, сдвинутыми обратно.
+    odd — {свойство: что с ним}: правка, которую не выразить сдвигом элемента; она переносится ключами слоя."""
+    found, notes, odd = {}, [], {}
     dt = (new.get("start") or 0) - (old.get("start") or 0)
     dt = dt if abs(dt) > tol["seconds"] else 0
     props_old = old.get("props", {})
@@ -234,17 +263,24 @@ def layer_change(name, old, new, tol, parents):
     for key, fn in (("offset", lambda: position_delta(props_old.get("position"), props_new.get("position"), tol)),
                     ("scale", lambda: scale_ratio(props_old.get("scale"), props_new.get("scale"), tol)),
                     ("rotation", lambda: rotation_delta(props_old.get("rotation"), props_new.get("rotation"), tol))):
+        prop = CHANGE_PROP[key]
         value = fn()
-        if isinstance(value, str):
+        if prop == "position" and isinstance(value, str) and "dims" in (props_new.get("position") or {}):
             notes.append(f"{name}: {value}")
+        elif isinstance(value, str):
+            odd[prop] = value
+        elif curve_changed(props_old.get(prop), props_new.get(prop), tol):
+            odd[prop] = f"{PROP_NAMES[prop]}: изгиб ключей"
         elif value is not None:
             found[key] = value
-    if changed(props_old.get("opacity"), props_new.get("opacity"), tol):
-        old_keys, new_keys = values_of(props_old["opacity"]), values_of(props_new["opacity"])
-        how = "" if same_times(old_keys, new_keys, tol["seconds"]) else ": " + key_change(old_keys, new_keys, tol)
-        notes.append(f"{name}: непрозрачность{how}")
-    if changed(props_old.get("anchor"), props_new.get("anchor"), tol):
-        notes.append(f"{name}: опорная точка")
+    for prop in ("opacity", "anchor"):
+        before, after = props_old.get(prop), props_new.get(prop)
+        if changed(before, after, tol):
+            old_keys, new_keys = values_of(before), values_of(after)
+            how = "" if same_times(old_keys, new_keys, tol["seconds"]) else ": " + key_change(old_keys, new_keys, tol)
+            odd[prop] = PROP_NAMES[prop] + how
+        elif curve_changed(before, after, tol):
+            odd[prop] = f"{PROP_NAMES[prop]}: изгиб ключей"
     if old.get("inner") != new.get("inner"):
         notes.append(f"{name}: содержимое (фигура, текст или эффекты)")
     if any(abs((new.get(k) or 0) - (old.get(k) or 0) - dt) > tol["seconds"] for k in ("in", "out")):
@@ -253,7 +289,14 @@ def layer_change(name, old, new, tol, parents):
         notes.append(f"{name}: {'выключен' if not new.get('enabled', True) else 'включён'}")
     if parents[0] != parents[1]:
         notes.append(f"{name}: родитель")
-    return found, notes, dt
+    return {"found": found, "notes": notes, "dt": dt, "odd": odd, "props": props_new}
+
+
+def payload(prop, start):
+    """Свойство слоя для adjust.layers: значение или ключи со временем от начала элемента и изгибом."""
+    if "keys" in prop:
+        return {"keys": [[round(key[0] - start, 3)] + list(key[1:]) for key in prop["keys"]]}
+    return {"v": prop.get("v")}
 
 
 def same_change(a, b, tol):
@@ -271,8 +314,11 @@ def same_change(a, b, tol):
     return True
 
 
-def item_changes(old_layers, new_layers, keys_old, keys_new, old_data, new_data, tol):
-    """Правка элемента целиком (одинаковая на всех корневых слоях) и неоднозначные пометки."""
+def item_changes(old_layers, new_layers, keys_old, keys_new, old_data, new_data, tol, start=None):
+    """Правка элемента целиком (одинаковая на всех корневых слоях), правки отдельных слоёв и пометки.
+
+    Возвращает (change, notes, layers, roots): layers — {слой: {свойство: значение или ключи}} для adjust.layers,
+    его нет без start (снимок старше начала элементов), тогда такие правки только печатаются."""
     notes = []
     gone = [key for key in old_layers if key not in new_layers]
     added = [key for key in new_layers if key not in old_layers]
@@ -280,25 +326,28 @@ def item_changes(old_layers, new_layers, keys_old, keys_new, old_data, new_data,
         notes.append("удалены слои: " + ", ".join(gone))
     if added:
         notes.append("новые слои: " + ", ".join(added))
-    roots, inside, times = {}, [], {}
+    roots, inside, times, edits = {}, {}, {}, {}
     for key, old in old_layers.items():
         if key not in new_layers:
             continue
         new = new_layers[key]
         parents = (parent_of(old, keys_old, old_data), parent_of(new, keys_new, new_data))
-        found, layer_notes, times[key] = layer_change(key, old, new, tol, parents)
-        notes += layer_notes
-        own_parent = parents[0] and parents[0][0] == old.get("item")
-        if own_parent:
-            if found:
-                inside.append(key)
+        one = layer_change(key, old, new, tol, parents)
+        edits[key], times[key] = one, one["dt"]
+        notes += one["notes"]
+        if parents[0] and parents[0][0] == old.get("item"):
+            if one["found"]:
+                inside[key] = one["found"]
         else:
-            roots[key] = found
-    if inside:
-        notes.append("правка внутри элемента: " + ", ".join(inside))
+            roots[key] = one["found"]
     shift, shift_note = time_shift(times, roots, new_layers, tol)
     if shift_note:
         notes.append(shift_note)
+    # Что пойдёт ключами слоя: правки, которые не выразить сдвигом, правки детей и корней, сдвинутых по-разному.
+    own = {key: dict(one["odd"]) for key, one in edits.items() if one["odd"]}
+    for key, found in inside.items():
+        for name in found:
+            own.setdefault(key, {})[CHANGE_PROP[name]] = describe({name: found[name]})
     moved = {key: one for key, one in roots.items() if one}
     change = {}
     if moved:
@@ -306,11 +355,18 @@ def item_changes(old_layers, new_layers, keys_old, keys_new, old_data, new_data,
         if all(same_change(values[0], other, tol) for other in values[1:]):
             change = dict(values[0])
         else:
-            notes.append("слои элемента изменены по-разному: " + ", ".join(
-                f"{key} {describe(one)}" for key, one in moved.items()))
+            for key, found in moved.items():
+                for name in found:
+                    own.setdefault(key, {})[CHANGE_PROP[name]] = describe({name: found[name]})
     if shift:
         change["shift"] = shift
-    return change, notes
+    layers = {}
+    for key, props in own.items():
+        if start is None:
+            notes += [f"{key}: {why}" for why in props.values()]
+            continue
+        layers[key] = {prop: payload(edits[key]["props"][prop], start) for prop in props}
+    return change, notes, layers, sorted(roots)
 
 
 def time_shift(times, roots, new_layers, tol):
@@ -450,10 +506,15 @@ def diff(scene, snapshot, edited, settings):
         if ident not in new_items:
             result[ident] = {"change": {}, "order": None, "notes": ["слоёв элемента нет в композиции"]}
             continue
-        change, notes = item_changes(old_items[ident], new_items[ident], keys_old, keys_new, snapshot, edited, tol)
+        start = snapshot["starts"].get(ident) if isinstance(snapshot.get("starts"), dict) else None
+        change, notes, layers, roots = item_changes(old_items[ident], new_items[ident], keys_old, keys_new,
+                                                    snapshot, edited, tol, start)
         shift = change.pop("shift", 0)
-        change = remaining(change, items[scene_index[ident]].get("adjust") or {}, snapshot_adjust.get(ident) or {}, tol)
-        result[ident] = {"change": change, "order": None, "notes": notes, "shift": shift, "delay": 0}
+        adjust = items[scene_index[ident]].get("adjust") or {}
+        change = remaining(change, adjust, snapshot_adjust.get(ident) or {}, tol)
+        layers = new_layer_edits(layers, adjust.get("layers") or {})
+        result[ident] = {"change": change, "order": None, "notes": notes, "shift": shift, "delay": 0,
+                         "layers": layers, "roots": roots}
     unknown = sorted(set(new_items) - set(scene_index))
     if unknown:
         loose.append("слои элементов, которых нет в сцене: " + ", ".join(unknown))
@@ -469,6 +530,16 @@ def diff(scene, snapshot, edited, settings):
     for ident, one in moves.items():
         result[ident]["order"] = one
     return result, loose
+
+
+def new_layer_edits(layers, stored):
+    """Правки слоёв, которых ещё нет в сцене: повторный --apply их не пишет."""
+    result = {}
+    for key, props in layers.items():
+        fresh = {prop: value for prop, value in props.items() if (stored.get(key) or {}).get(prop) != value}
+        if fresh:
+            result[key] = fresh
+    return result
 
 
 def delays(result, items, built, tol):
@@ -541,6 +612,9 @@ def summary(result, loose, settings, applied=False):
         parts = []
         if one["change"]:
             parts.append(describe(one["change"]))
+        if one.get("layers"):
+            parts.append("слои: " + ", ".join(
+                f"{key} ({', '.join(PROP_NAMES[prop] for prop in props)})" for key, props in one["layers"].items()))
         if one["order"]:
             mode, partner = one["order"]
             parts.append(f"{'под' if mode == 'below' else 'над'} {partner}")
@@ -574,9 +648,17 @@ def apply(scene, result):
                 item.pop("delay", None)
             count += 1
         change = {key: value for key, value in (one or {}).get("change", {}).items() if key != "shift"}
-        if not one or not (change or one["order"]):
+        if not one or not (change or one["order"] or one.get("layers")):
             continue
         adjust = dict(item.get("adjust") or {})
+        stored = json.loads(json.dumps(adjust.get("layers") or {}))
+        for key in one.get("roots", []):
+            for prop, value in (stored.get(key) or {}).items():
+                follow(prop, value, change)
+        for key, props in one.get("layers", {}).items():
+            stored.setdefault(key, {}).update(props)
+        if stored:
+            adjust["layers"] = stored
         if change.get("offset"):
             size = max(len(change["offset"]), len(adjust.get("offset") or []))
             adjust["offset"] = [round(x + y, 1) for x, y in zip(pad(adjust.get("offset"), size), pad(change["offset"], size))]
@@ -601,6 +683,23 @@ def apply(scene, result):
             item.pop("adjust", None)
         count += 1
     return count
+
+
+def follow(prop, value, change):
+    """Сохранённые ключи корневого слоя идут за новой правкой всего элемента: движок ставит их после adjust."""
+    def each(fn):
+        if "keys" in value:
+            for key in value["keys"]:
+                key[1] = fn(key[1])
+        else:
+            value["v"] = fn(value["v"])
+
+    if prop == "position" and change.get("offset"):
+        each(lambda v: [round(x + y, 3) for x, y in zip(pad(v, len(v)), pad(change["offset"], len(v)))])
+    elif prop == "scale" and change.get("scale"):
+        each(lambda v: [round(x * change["scale"], 3) for x in v])
+    elif prop == "rotation" and change.get("rotation"):
+        each(lambda v: round(v + change["rotation"], 3))
 
 
 def run(scene_path, edited, settings, write=False, show_all=False):

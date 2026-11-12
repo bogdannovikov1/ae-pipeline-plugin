@@ -60,6 +60,7 @@
         Engine.ends = {};
         Engine.seam = null;
         Engine.missing = {};
+        Engine.editsLost = [];
         layerLog = {};
         built = [];
         return scene;
@@ -133,6 +134,10 @@
             }
         }
         var fresh = Engine.newLayers(Engine.comp, before);
+        var lost = Engine.layerEdits(fresh, item.adjust && item.adjust.layers, at);
+        if (lost.length) {
+            Engine.editsLost.push(id + ": " + lost.join(", "));
+        }
         if (!replaying) {
             var ids = [];
             for (var f = 0; f < fresh.length; f++) {
@@ -585,6 +590,10 @@
         var journal = { sounds: sounds, starts: Engine.starts, layers: layerLog };
         if (freeze) {
             journal.freeze = freeze;
+        }
+        // Author's layer edits (adjust.layers) whose layer the block no longer makes: ae_run.py build prints them.
+        if (Engine.editsLost.length) {
+            journal.edits_lost = Engine.editsLost;
         }
         Timeline.writeJson(journalFile(scenePath), journal);
     }

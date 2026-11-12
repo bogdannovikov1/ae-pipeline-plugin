@@ -286,6 +286,119 @@ $.global.Engine = (function () {
         }
     };
 
+    // adjust.layers: per layer of the item the author's own value or keys, replayed after the block and adjust.
+    // A layer is named as ae_run.py diff names it: its name, and "name#2"... among same-named video layers of the
+    // item, top first. Key times count from the item start, so a later delay carries them.
+    var EDIT_PROPS = { position: "ADBE Position", scale: "ADBE Scale", rotation: "ADBE Rotate Z",
+        opacity: "ADBE Opacity", anchor: "ADBE Anchor Point" };
+
+    E.layerKeys = function (layers) {
+        var video = [];
+        var i;
+        for (i = 0; i < layers.length; i++) {
+            if (layers[i].hasVideo) {
+                video.push(layers[i]);
+            }
+        }
+        video.sort(function (a, b) { return a.index - b.index; });
+        var named = {};
+        for (i = 0; i < video.length; i++) {
+            var key = video[i].name;
+            var number = 1;
+            while (named[key]) {
+                number += 1;
+                key = video[i].name + "#" + number;
+            }
+            named[key] = video[i];
+        }
+        return named;
+    };
+
+    function fit(value, like) {
+        if (!(like instanceof Array) || !(value instanceof Array)) {
+            return value;
+        }
+        var out = [];
+        for (var i = 0; i < like.length; i++) {
+            out.push(i < value.length ? value[i] : like[i]);
+        }
+        return out;
+    }
+
+    function easeOf(list) {
+        var out = [];
+        for (var i = 0; i < list.length; i++) {
+            out.push(new KeyframeEase(list[i][0], Math.min(100, Math.max(0.1, list[i][1]))));
+        }
+        return out;
+    }
+
+    function curveAt(prop, k, curve) {
+        if (!curve) {
+            return;
+        }
+        // Each part on its own: a hold key has no ease, a 1D property no tangents.
+        try {
+            prop.setInterpolationTypeAtKey(k, curve.i[0], curve.i[1]);
+        } catch (e1) {}
+        try {
+            prop.setTemporalEaseAtKey(k, easeOf(curve.e[0]), easeOf(curve.e[1]));
+        } catch (e2) {}
+        if (curve.s && prop.isSpatial) {
+            try {
+                prop.setSpatialTangentsAtKey(k, curve.s[0], curve.s[1]);
+            } catch (e3) {}
+        }
+    }
+
+    E.setEdit = function (prop, edit, start) {
+        var like = rest(prop);
+        while (prop.numKeys) {
+            prop.removeKey(1);
+        }
+        if (!edit.keys) {
+            prop.setValue(fit(edit.v, like));
+            return;
+        }
+        var times = [];
+        var values = [];
+        var k;
+        for (k = 0; k < edit.keys.length; k++) {
+            times.push(start + edit.keys[k][0]);
+            values.push(fit(edit.keys[k][1], like));
+        }
+        prop.setValuesAtTimes(times, values);
+        for (k = 0; k < edit.keys.length; k++) {
+            curveAt(prop, prop.nearestKeyIndex(times[k]), edit.keys[k][2]);
+        }
+    };
+
+    // Returns the layer names it did not find: the block changed since the author's edit.
+    E.layerEdits = function (layers, edits, start) {
+        var lost = [];
+        if (!edits) {
+            return lost;
+        }
+        var named = E.layerKeys(layers);
+        for (var key in edits) {
+            if (!edits.hasOwnProperty(key)) {
+                continue;
+            }
+            var layer = named[key];
+            var transform = layer ? layer.property("ADBE Transform Group") : null;
+            if (!transform) {
+                lost.push(key);
+                continue;
+            }
+            for (var name in edits[key]) {
+                if (edits[key].hasOwnProperty(name) && EDIT_PROPS[name]) {
+                    E.setEdit(transform.property(EDIT_PROPS[name]), edits[key][name], start);
+                }
+            }
+        }
+        return lost;
+    };
+
     // adjust.below / adjust.above: the item's layers go right under the lowest or over the highest layer of
     // another item, keeping their own order. Both lists come sorted by index, top first.
     E.restack = function (mine, other, mode) {

@@ -1199,7 +1199,8 @@ class SceneDiff(Case):
                  {"id": "zone", "block": "label", "at_word": 1, "params": {"target": "obj"}},
                  {"id": "num", "block": "label", "at_word": 2}, {"id": "strip", "block": "label", "at_word": 3}]
         self.path = self.write("F1.scene.json", self.scene(items=items))
-        snapshot = {"comp": "c", "adjust": {}, "delay": {}, "layers": [
+        snapshot = {"comp": "c", "adjust": {}, "delay": {}, "starts": {"bg": 0, "obj": 0.5, "zone": 1, "num": 1.5, "strip": 1},
+                    "layers": [
             layer(1, "zone", "zone", (300, 500, 0)), layer(2, "zone label", "zone", (300, 420, 0)),
             layer(3, "num", "num", (900, 200, 0)), layer(4, "obj", "obj", (300, 500, 0)), layer(5, "obj", "obj", (600, 500, 0)),
             layer(6, "strip", "strip", pos_keys=[[0, [-200, 900, 0]], [1, [960, 900, 0]]]),
@@ -1248,19 +1249,49 @@ class SceneDiff(Case):
         items = {item["id"]: item for item in json.loads(self.path.read_text())["items"]}
         self.assertEqual(items["num"]["adjust"]["offset"], [10, -30, 0])
 
-    def test_unclear_edits_are_only_printed(self):
+    def test_old_snapshot_only_prints_layer_edits(self):
+        snapshot = json.loads(snapshot_path(self.path).read_text())
+        del snapshot["starts"]
+        snapshot_path(self.path).write_text(json.dumps(snapshot))
+        edited = json.loads(json.dumps(self.edited))
+        layers = {one["name"]: one for one in edited["layers"]}
+        layers["strip"]["props"]["scale"]["v"] = [120, 90, 100]
+        layers["bg"]["inner"] = "other"
+        text = run_diff(self.path, edited, self.settings, write=True)
+        self.assertIn("strip: проверить: strip: неравномерный масштаб", text)
+        self.assertIn("bg: проверить: bg: содержимое", text)
+        items = {item["id"]: item for item in json.loads(self.path.read_text())["items"]}
+        self.assertNotIn("adjust", items["strip"])
+
+    def test_layer_edits_go_to_adjust_layers(self):
         edited = json.loads(json.dumps(self.edited))
         layers = {one["name"]: one for one in edited["layers"]}
         layers["strip"]["props"]["scale"]["v"] = [120, 90, 100]
         layers["bg"]["inner"] = "other"
         layers["zone label"]["props"]["position"]["v"] = [300, 300, 0]
         text = run_diff(self.path, edited, self.settings, write=True)
-        self.assertIn("strip: проверить: strip: неравномерный масштаб", text)
+        self.assertIn("strip: слои: strip (масштаб)", text)
         self.assertIn("bg: проверить: bg: содержимое", text)
-        self.assertIn("слои элемента изменены по-разному", text)
+        self.assertIn("zone: слои: zone (позиция), zone label (позиция); под obj", text)
         items = {item["id"]: item for item in json.loads(self.path.read_text())["items"]}
-        self.assertNotIn("adjust", items["strip"])
-        self.assertEqual(items["zone"]["adjust"], {"below": "obj"})
+        self.assertEqual(items["strip"]["adjust"], {"layers": {"strip": {"scale": {"v": [120, 90, 100]}}}})
+        self.assertEqual(items["zone"]["adjust"]["layers"]["zone label"], {"position": {"v": [300, 300, 0]}})
+        self.assertIn("Правок автора нет", run_diff(self.path, edited, self.settings).replace(
+            "Можно перенести (--apply): 0 эл.; неоднозначно: 1\nbg: проверить: bg: содержимое (фигура, текст или эффекты)",
+            "Правок автора нет"))
+
+    def test_new_and_moved_keys_with_curves(self):
+        strip = self.edited["layers"][5]
+        strip["props"]["scale"]["v"] = [100, 100, 100]
+        ease = {"i": [6613, 6613], "e": [[[0, 33]], [[0, 80]]]}
+        strip["props"]["position"]["keys"] = [[0.1, [-200, 900, 0], ease], [0.6, [1000, 900, 0]], [1.4, [960, 900, 0]]]
+        strip["props"]["opacity"] = {"keys": [[2, 100], [2.5, 0]]}
+        text = run_diff(self.path, self.edited, self.settings, write=True)
+        self.assertIn("strip: слои: strip (позиция, непрозрачность)", text)
+        adjust = json.loads(self.path.read_text())["items"][4]["adjust"]["layers"]["strip"]
+        self.assertEqual(adjust["position"]["keys"][0], [-0.9, [-200, 900, 0], ease], "время от начала элемента")
+        self.assertEqual(len(adjust["position"]["keys"]), 3)
+        self.assertEqual(adjust["opacity"]["keys"], [[1.0, 100], [1.5, 0]])
 
     def test_child_layer_edit_is_inside(self):
         self.edited["layers"][4]["parent"] = 4
@@ -1269,15 +1300,24 @@ class SceneDiff(Case):
         snapshot["layers"][1]["parent"] = 1
         snapshot_path(self.path).write_text(json.dumps(snapshot))
         text = run_diff(self.path, self.edited, self.settings)
-        self.assertNotIn("правка внутри", text)
+        self.assertNotIn("zone label", text)
         self.edited["layers"][4]["props"]["position"]["v"] = [0, 0, 0]
-        self.assertIn("правка внутри элемента: zone label", run_diff(self.path, self.edited, self.settings))
+        self.assertIn("слои: zone label (позиция)", run_diff(self.path, self.edited, self.settings))
+
+    def test_new_offset_moves_stored_root_keys(self):
+        scene = json.loads(self.path.read_text())
+        scene["items"][3]["adjust"] = {"layers": {"num": {"rotation": {"v": 5}, "position": {"v": [900, 200, 0]}}}}
+        self.path.write_text(json.dumps(scene))
+        run_diff(self.path, self.edited, self.settings, write=True)
+        adjust = json.loads(self.path.read_text())["items"][3]["adjust"]
+        self.assertEqual(adjust["layers"]["num"]["position"], {"v": [900, 170, 0]}, "сохранённые ключи идут за сдвигом")
+        self.assertEqual(adjust["layers"]["num"]["rotation"], {"v": 5})
 
     def test_keys_moved_unevenly_and_deleted_layers(self):
         self.edited["layers"][5]["props"]["position"]["keys"][0][1] = [-200, 800, 0]
         del self.edited["layers"][2]
         text = run_diff(self.path, self.edited, self.settings)
-        self.assertIn("ключи сдвинуты по-разному", text)
+        self.assertIn("strip: масштаб ×1.2; слои: strip (позиция)", text)
         self.assertIn("удалены слои: obj#2", text)
 
     def moved_in_time(self, layer_, dt):
@@ -1309,15 +1349,15 @@ class SceneDiff(Case):
         self.assertNotIn("по времени", run_diff(self.path, self.edited, self.settings, write=True))
         self.assertEqual(json.loads(self.path.read_text())["items"][5]["delay"], 0.1)
 
-    def test_uneven_time_shift_and_key_edits_are_notes(self):
+    def test_uneven_time_shift_is_note_and_key_edits_go_to_layers(self):
         layers = {one["name"]: one for one in self.edited["layers"]}
         self.moved_in_time(layers["zone"], 0.3)
         layers["strip"]["props"]["position"]["keys"] = [[0.2, [-200, 900, 0]], [1.2, [960, 900, 0]]]
         layers["obj"]["props"]["opacity"] = {"keys": [[0, 0], [0.5, 100]]}
         text = run_diff(self.path, self.edited, self.settings, write=True)
         self.assertIn("слои сдвинуты по времени по-разному: zone +0.3 с", text)
-        self.assertIn("позиция: ключи сдвинуты по времени на +0.2 с", text)
-        self.assertIn("непрозрачность: ключей 0→2", text)
+        self.assertIn("strip: масштаб ×1.2; слои: strip (позиция)", text)
+        self.assertIn("obj: слои: obj#2 (непрозрачность)", text)
         self.assertNotIn("delay", json.loads(self.path.read_text())["items"][2])
 
     def test_dragging_at_rest_moves_whole_item(self):
@@ -1344,7 +1384,12 @@ class SceneDiff(Case):
         errors = " ".join(check_scene(self.path, self.settings))
         for part in ("adjust.offset", "adjust.scale", "adjust.below", "zoom"):
             self.assertIn(part, errors)
-        scene["items"][2]["adjust"] = {"offset": [0, 40], "scale": 0.8, "rotation": 2, "below": "obj"}
+        scene["items"][2]["adjust"] = {"layers": {"zone": {"zoom": {"v": 1}}}}
+        self.path.write_text(json.dumps(scene))
+        self.assertIn("adjust.layers", " ".join(check_scene(self.path, self.settings)))
+        scene["items"][2]["adjust"] = {"offset": [0, 40], "scale": 0.8, "rotation": 2, "below": "obj",
+                                       "layers": {"zone": {"opacity": {"keys": [[0, 0], [0.5, 100, {"i": [6612, 6612]}]]},
+                                                           "scale": {"v": [120, 90, 100]}}}}
         self.path.write_text(json.dumps(scene))
         self.assertFalse([e for e in check_scene(self.path, self.settings) if "adjust" in e])
 

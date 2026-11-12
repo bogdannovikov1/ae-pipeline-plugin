@@ -45,6 +45,27 @@
         return typeof value === "number" ? round3(value) : null;
     }
 
+    function easeList(list) {
+        var out = [];
+        for (var i = 0; i < list.length; i++) {
+            out.push([round3(list[i].speed), round3(list[i].influence)]);
+        }
+        return out;
+    }
+
+    // How the key moves: interpolation in and out, temporal ease per dimension, spatial tangents.
+    // The engine replays it when the author's keys go into the scene (adjust.layers).
+    function curve(prop, k) {
+        var result = {
+            i: [prop.keyInInterpolationType(k), prop.keyOutInterpolationType(k)],
+            e: [easeList(prop.keyInTemporalEase(k)), easeList(prop.keyOutTemporalEase(k))]
+        };
+        if (prop.isSpatial) {
+            result.s = [plain(prop.keyInSpatialTangent(k)), plain(prop.keyOutSpatialTangent(k))];
+        }
+        return result;
+    }
+
     // { v } for a still value, { keys: [[time, value]...] } for an animated one, before expressions.
     function readProp(prop) {
         if (!prop) {
@@ -54,7 +75,7 @@
         if (prop.numKeys) {
             result.keys = [];
             for (var k = 1; k <= prop.numKeys; k++) {
-                result.keys.push([round3(prop.keyTime(k)), plain(prop.keyValue(k))]);
+                result.keys.push([round3(prop.keyTime(k)), plain(prop.keyValue(k)), curve(prop, k)]);
             }
         } else {
             result.v = plain(prop.valueAtTime(0, true));
