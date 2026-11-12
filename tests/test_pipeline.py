@@ -1199,7 +1199,7 @@ class SceneDiff(Case):
                  {"id": "zone", "block": "label", "at_word": 1, "params": {"target": "obj"}},
                  {"id": "num", "block": "label", "at_word": 2}, {"id": "strip", "block": "label", "at_word": 3}]
         self.path = self.write("F1.scene.json", self.scene(items=items))
-        snapshot = {"comp": "c", "adjust": {}, "layers": [
+        snapshot = {"comp": "c", "adjust": {}, "delay": {}, "layers": [
             layer(1, "zone", "zone", (300, 500, 0)), layer(2, "zone label", "zone", (300, 420, 0)),
             layer(3, "num", "num", (900, 200, 0)), layer(4, "obj", "obj", (300, 500, 0)), layer(5, "obj", "obj", (600, 500, 0)),
             layer(6, "strip", "strip", pos_keys=[[0, [-200, 900, 0]], [1, [960, 900, 0]]]),
@@ -1274,11 +1274,62 @@ class SceneDiff(Case):
         self.assertIn("правка внутри элемента: zone label", run_diff(self.path, self.edited, self.settings))
 
     def test_keys_moved_unevenly_and_deleted_layers(self):
-        self.edited["layers"][5]["props"]["position"]["keys"][1][1] = [960, 800, 0]
+        self.edited["layers"][5]["props"]["position"]["keys"][0][1] = [-200, 800, 0]
         del self.edited["layers"][2]
         text = run_diff(self.path, self.edited, self.settings)
         self.assertIn("ключи сдвинуты по-разному", text)
         self.assertIn("удалены слои: obj#2", text)
+
+    def moved_in_time(self, layer_, dt):
+        layer_["start"] += dt
+        layer_["in"] += dt
+        layer_["out"] += dt
+        for prop in layer_["props"].values():
+            for key in prop.get("keys", []):
+                key[0] += dt
+
+    def test_time_shift_goes_to_delay_once(self):
+        scene = json.loads(self.path.read_text())
+        scene["items"].append({"id": "tail", "block": "label", "after": "strip", "delay": 0.5})
+        self.path.write_text(json.dumps(scene))
+        snapshot = json.loads(snapshot_path(self.path).read_text())
+        snapshot["layers"].append(layer(9, "tail", "tail"))
+        snapshot["delay"] = {"tail": 0.5}
+        snapshot_path(self.path).write_text(json.dumps(snapshot))
+        self.edited["layers"].append(layer(9, "tail", "tail"))
+        strip = self.edited["layers"][5]
+        strip["props"]["scale"]["v"] = [100, 100, 100]
+        self.moved_in_time(strip, 0.4)
+        text = run_diff(self.path, self.edited, self.settings, write=True)
+        self.assertIn("strip: по времени +0.4 с", text)
+        self.assertNotIn("время ключей", text)
+        items = {item["id"]: item for item in json.loads(self.path.read_text())["items"]}
+        self.assertEqual(items["strip"]["delay"], 0.4)
+        self.assertEqual(items["tail"]["delay"], 0.1, "зависимый от strip элемент остаётся на месте")
+        self.assertNotIn("по времени", run_diff(self.path, self.edited, self.settings, write=True))
+        self.assertEqual(json.loads(self.path.read_text())["items"][5]["delay"], 0.1)
+
+    def test_uneven_time_shift_and_key_edits_are_notes(self):
+        layers = {one["name"]: one for one in self.edited["layers"]}
+        self.moved_in_time(layers["zone"], 0.3)
+        layers["strip"]["props"]["position"]["keys"] = [[0.2, [-200, 900, 0]], [1.2, [960, 900, 0]]]
+        layers["obj"]["props"]["opacity"] = {"keys": [[0, 0], [0.5, 100]]}
+        text = run_diff(self.path, self.edited, self.settings, write=True)
+        self.assertIn("слои сдвинуты по времени по-разному: zone +0.3 с", text)
+        self.assertIn("позиция: ключи сдвинуты по времени на +0.2 с", text)
+        self.assertIn("непрозрачность: ключей 0→2", text)
+        self.assertNotIn("delay", json.loads(self.path.read_text())["items"][2])
+
+    def test_dragging_at_rest_moves_whole_item(self):
+        strip = self.edited["layers"][5]
+        strip["props"]["scale"]["v"] = [100, 100, 100]
+        strip["props"]["position"]["keys"].append([3, [960, 860, 0]])
+        text = run_diff(self.path, self.edited, self.settings, write=True)
+        self.assertIn("strip: сдвиг (0, -40", text)
+        items = {item["id"]: item for item in json.loads(self.path.read_text())["items"]}
+        self.assertEqual(items["strip"]["adjust"], {"offset": [0, -40, 0]})
+        strip["props"]["position"]["keys"] = [[0, [-200, 900, 0]], [1, [960, 860, 0]]]
+        self.assertIn("Правок автора нет", run_diff(self.path, self.edited, self.settings))
 
     def test_no_snapshot(self):
         snapshot_path(self.path).unlink()

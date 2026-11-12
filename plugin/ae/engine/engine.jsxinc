@@ -93,7 +93,9 @@ $.global.Engine = (function () {
 
     // One continuous spring: a fast launch, a single small overshoot and a soft settle.
     // Damping is derived from the travel, so the overshoot stays the same size for any distance.
-    E.spring = function (layer, arrive, from, to) {
+    // The curve is baked into frame keys: the author can slide the layer in time, move or delete keys, and
+    // ae_run.py diff sees them. Only the calm drift stays an expression over the keyed position.
+    E.springKeys = function (arrive, from, to, frame) {
         var token = E.tokens.motion.spring;
         var dx = from[0] - to[0];
         var dy = from[1] - to[1];
@@ -101,13 +103,32 @@ $.global.Engine = (function () {
         var w = token.frequency;
         var k = -Math.log(token.overshoot / distance) * w / Math.PI;
         var start = arrive - Math.PI / (2 * w);
-        var drift = "Math.sin(time * " + E.tokens.motion.float_speed + ") * " + E.tokens.motion.float_shift;
+        var rest = token.rest === undefined ? 0.5 : token.rest;
+        // The swing is under rest pixels from here on: the last key lands on the target.
+        var settle = distance > rest ? Math.log(distance / rest) / k : 0;
+        var steps = Math.max(1, Math.ceil(settle / frame));
+        var times = [];
+        var values = [];
+        for (var n = 0; n <= steps; n++) {
+            var t = n * frame;
+            var s = n === steps ? 0 : Math.exp(-k * t) * Math.cos(w * t);
+            times.push(start + t);
+            values.push([to[0] + dx * s, to[1] + dy * s, 0]);
+        }
+        return { start: start, times: times, values: values };
+    };
+
+    E.spring = function (layer, arrive, from, to) {
+        var keys = E.springKeys(arrive, from, to, E.comp.frameDuration);
         layer.threeDLayer = true;
-        layer.position.setValue([to[0], to[1], 0]);
-        layer.position.expression = "var t = Math.max(time - " + start + ", 0);\n" +
-            "var s = Math.exp(-" + k + " * t) * Math.cos(" + w + " * t);\n" +
-            "[" + to[0] + " + " + dx + " * s, " + to[1] + " + " + dy + " * s + " + drift + ", 0];";
-        return start;
+        layer.position.setValuesAtTimes(keys.times, keys.values);
+        // Straight path between the frame keys: auto-bezier would bulge past the overshoot.
+        for (var n = 0; n < keys.times.length; n++) {
+            var index = layer.position.nearestKeyIndex(keys.times[n]);
+            layer.position.setSpatialTangentsAtKey(index, [0, 0, 0], [0, 0, 0]);
+        }
+        E.float(layer);
+        return keys.start;
     };
 
     E.fadeIn = function (layer, t, duration) {

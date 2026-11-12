@@ -84,13 +84,75 @@ def same_times(before, after, eps):
                for (a, _), (b, _) in zip(before, after))
 
 
-def offset_delta(before, after, tol):
+def shifted(prop, dt):
+    """Свойство с временем ключей, сдвинутым назад на dt: так ключи слоя, который двигали по времени, сравнимы."""
+    if not prop or not dt:
+        return prop
+    result = dict(prop)
+    if "keys" in prop:
+        result["keys"] = [[time - dt, value] for time, value in prop["keys"]]
+    if "dims" in prop:
+        result["dims"] = [shifted(one, dt) for one in prop["dims"]]
+    return result
+
+
+def has_keys(layer):
+    props = layer.get("props", {}).values()
+    return any(prop and ("keys" in prop or any("keys" in one for one in prop.get("dims", []))) for prop in props)
+
+
+def key_change(old, new, tol):
+    """Что сделали с ключами по времени: сводка для модели."""
+    count_old = sum(1 for time, _ in old if time is not None)
+    count_new = sum(1 for time, _ in new if time is not None)
+    if count_old != count_new:
+        return f"ключей {count_old}→{count_new}"
+    deltas = [b - a for (a, _), (b, _) in zip(old, new)]
+    if all(abs(one - deltas[0]) <= tol["seconds"] for one in deltas):
+        return f"ключи сдвинуты по времени на {number(deltas[0], 2)} с"
+    return "время ключей изменено"
+
+
+def rest_move(old, new, tol):
+    """Слой с ключами перетащили в кадре после конца движения: AE поменял последний ключ или добавил новый.
+
+    Тогда автор двигал место покоя, и это сдвиг всего элемента. Остальные ключи должны остаться как были."""
+    keyed = [one for one in old if one[0] is not None]
+    if not keyed or len(new) not in (len(old), len(old) + 1):
+        return None
+    head = new[:len(keyed) - 1]
+    if not same_times(keyed[:-1], head, tol["seconds"]) or changed_values(keyed[:-1], head, tol):
+        return None
+    last_time, last_value = keyed[-1]
+    if len(new) == len(old):
+        time, value = new[-1]
+        if time is None or abs(time - last_time) > tol["seconds"]:
+            return None
+    else:
+        if changed_values([keyed[-1]], [new[-2]], tol) or abs(new[-2][0] - last_time) > tol["seconds"]:
+            return None
+        time, value = new[-1]
+        if time is None or time < last_time:
+            return None
+    a, b = vector(last_value), vector(value)
+    size = max(len(a), len(b))
+    delta = [y - x for x, y in zip(a + [0] * (size - len(a)), b + [0] * (size - len(b)))]
+    return delta if any(abs(x) > tol["px"] for x in delta) else None
+
+
+def changed_values(old, new, tol):
+    return any(len(vector(a)) != len(vector(b)) or any(abs(x - y) > tol["px"] for x, y in zip(vector(a), vector(b)))
+               for (_, a), (_, b) in zip(old, new))
+
+
+def offset_delta(before, after, tol, label="ключи"):
     """Сдвиг между значениями свойства: список, None — без изменений, строка — почему неоднозначно."""
     old, new = values_of(before), values_of(after)
     if old is None or new is None:
         return None
     if not same_times(old, new, tol["seconds"]):
-        return "ключи изменены"
+        moved = rest_move(old, new, tol)
+        return moved if moved else f"{label}: {key_change(old, new, tol)}"
     deltas = []
     for (_, a), (_, b) in zip(old, new):
         a, b = vector(a), vector(b)
@@ -99,7 +161,7 @@ def offset_delta(before, after, tol):
         deltas.append([y - x for x, y in zip(a, b)])
     first = deltas[0]
     if any(any(abs(x - y) > tol["px"] for x, y in zip(first, other)) for other in deltas[1:]):
-        return "ключи сдвинуты по-разному"
+        return rest_move(old, new, tol) or "ключи сдвинуты по-разному"
     if all(abs(x) <= tol["px"] for x in first):
         return None
     return first
@@ -112,10 +174,10 @@ def position_delta(before, after, tol):
     if ("dims" in before) != ("dims" in after):
         return "позицию разделили или объединили по осям"
     if "dims" not in before:
-        return offset_delta(before, after, tol)
+        return offset_delta(before, after, tol, "позиция")
     result = []
     for old, new in zip(before["dims"], after["dims"]):
-        one = offset_delta(old, new, tol)
+        one = offset_delta(old, new, tol, "позиция")
         if isinstance(one, str):
             return one
         result.append(one[0] if one else 0)
@@ -128,7 +190,7 @@ def scale_ratio(before, after, tol):
     if old is None or new is None:
         return None
     if not same_times(old, new, tol["seconds"]):
-        return "ключи масштаба изменены"
+        return f"масштаб: {key_change(old, new, tol)}"
     ratios = []
     for (_, a), (_, b) in zip(old, new):
         for x, y in list(zip(vector(a), vector(b)))[:2]:
@@ -145,7 +207,7 @@ def scale_ratio(before, after, tol):
 
 
 def rotation_delta(before, after, tol):
-    one = offset_delta(before, after, dict(tol, px=tol["degrees"]))
+    one = offset_delta(before, after, dict(tol, px=tol["degrees"]), "поворот")
     return one[0] if isinstance(one, list) else one
 
 
@@ -161,9 +223,14 @@ def changed(before, after, tol):
 
 
 def layer_change(name, old, new, tol, parents):
-    """Правки одного слоя: {offset, scale, rotation} и список неоднозначных пометок."""
+    """Правки одного слоя: {offset, scale, rotation}, неоднозначные пометки и сдвиг слоя по времени.
+
+    Слой, который целиком передвинули по времени, сравнивается с ключами, сдвинутыми обратно."""
     found, notes = {}, []
-    props_old, props_new = old.get("props", {}), new.get("props", {})
+    dt = (new.get("start") or 0) - (old.get("start") or 0)
+    dt = dt if abs(dt) > tol["seconds"] else 0
+    props_old = old.get("props", {})
+    props_new = {key: shifted(prop, dt) for key, prop in new.get("props", {}).items()}
     for key, fn in (("offset", lambda: position_delta(props_old.get("position"), props_new.get("position"), tol)),
                     ("scale", lambda: scale_ratio(props_old.get("scale"), props_new.get("scale"), tol)),
                     ("rotation", lambda: rotation_delta(props_old.get("rotation"), props_new.get("rotation"), tol))):
@@ -173,18 +240,20 @@ def layer_change(name, old, new, tol, parents):
         elif value is not None:
             found[key] = value
     if changed(props_old.get("opacity"), props_new.get("opacity"), tol):
-        notes.append(f"{name}: непрозрачность")
+        old_keys, new_keys = values_of(props_old["opacity"]), values_of(props_new["opacity"])
+        how = "" if same_times(old_keys, new_keys, tol["seconds"]) else ": " + key_change(old_keys, new_keys, tol)
+        notes.append(f"{name}: непрозрачность{how}")
     if changed(props_old.get("anchor"), props_new.get("anchor"), tol):
         notes.append(f"{name}: опорная точка")
     if old.get("inner") != new.get("inner"):
         notes.append(f"{name}: содержимое (фигура, текст или эффекты)")
-    if any(abs((old.get(k) or 0) - (new.get(k) or 0)) > tol["seconds"] for k in ("in", "out", "start")):
-        notes.append(f"{name}: время слоя")
+    if any(abs((new.get(k) or 0) - (old.get(k) or 0) - dt) > tol["seconds"] for k in ("in", "out")):
+        notes.append(f"{name}: обрезка слоя (вход или выход)")
     if old.get("enabled", True) != new.get("enabled", True):
         notes.append(f"{name}: {'выключен' if not new.get('enabled', True) else 'включён'}")
     if parents[0] != parents[1]:
         notes.append(f"{name}: родитель")
-    return found, notes
+    return found, notes, dt
 
 
 def same_change(a, b, tol):
@@ -211,13 +280,13 @@ def item_changes(old_layers, new_layers, keys_old, keys_new, old_data, new_data,
         notes.append("удалены слои: " + ", ".join(gone))
     if added:
         notes.append("новые слои: " + ", ".join(added))
-    roots, inside = {}, []
+    roots, inside, times = {}, [], {}
     for key, old in old_layers.items():
         if key not in new_layers:
             continue
         new = new_layers[key]
         parents = (parent_of(old, keys_old, old_data), parent_of(new, keys_new, new_data))
-        found, layer_notes = layer_change(key, old, new, tol, parents)
+        found, layer_notes, times[key] = layer_change(key, old, new, tol, parents)
         notes += layer_notes
         own_parent = parents[0] and parents[0][0] == old.get("item")
         if own_parent:
@@ -227,15 +296,39 @@ def item_changes(old_layers, new_layers, keys_old, keys_new, old_data, new_data,
             roots[key] = found
     if inside:
         notes.append("правка внутри элемента: " + ", ".join(inside))
+    shift, shift_note = time_shift(times, roots, new_layers, tol)
+    if shift_note:
+        notes.append(shift_note)
     moved = {key: one for key, one in roots.items() if one}
-    if not moved:
-        return {}, notes
-    values = list(roots.values())
-    if all(same_change(values[0], other, tol) for other in values[1:]):
-        return values[0], notes
-    notes.append("слои элемента изменены по-разному: " + ", ".join(
-        f"{key} {describe(one)}" for key, one in moved.items()))
-    return {}, notes
+    change = {}
+    if moved:
+        values = list(roots.values())
+        if all(same_change(values[0], other, tol) for other in values[1:]):
+            change = dict(values[0])
+        else:
+            notes.append("слои элемента изменены по-разному: " + ", ".join(
+                f"{key} {describe(one)}" for key, one in moved.items()))
+    if shift:
+        change["shift"] = shift
+    return change, notes
+
+
+def time_shift(times, roots, new_layers, tol):
+    """Сдвиг элемента по времени: одинаковый у корневых слоёв, у детей такой же или нулевой без ключей.
+
+    Возвращает (секунды или 0, пометка или None)."""
+    if not any(times.values()):
+        return 0, None
+    root_times = [times[key] for key in roots]
+    first = root_times[0] if root_times else 0
+    same = root_times and all(abs(one - first) <= tol["seconds"] for one in root_times)
+    children = [key for key in times if key not in roots]
+    follow = all(abs(times[key] - first) <= tol["seconds"] or (not times[key] and not has_keys(new_layers[key]))
+                 for key in children)
+    if same and first and follow:
+        return first, None
+    return 0, "слои сдвинуты по времени по-разному: " + ", ".join(
+        f"{key} {number(dt, 2)} с" for key, dt in times.items() if dt)
 
 
 # ---- Порядок слоёв
@@ -334,6 +427,8 @@ def describe(change):
         parts.append(f"масштаб ×{change['scale']:.3f}".rstrip("0").rstrip("."))
     if change.get("rotation"):
         parts.append(f"поворот {number(change['rotation'], 2)}°")
+    if change.get("shift"):
+        parts.append(f"по времени {number(change['shift'], 2)} с")
     return ", ".join(parts)
 
 
@@ -356,8 +451,9 @@ def diff(scene, snapshot, edited, settings):
             result[ident] = {"change": {}, "order": None, "notes": ["слоёв элемента нет в композиции"]}
             continue
         change, notes = item_changes(old_items[ident], new_items[ident], keys_old, keys_new, snapshot, edited, tol)
+        shift = change.pop("shift", 0)
         change = remaining(change, items[scene_index[ident]].get("adjust") or {}, snapshot_adjust.get(ident) or {}, tol)
-        result[ident] = {"change": change, "order": None, "notes": notes}
+        result[ident] = {"change": change, "order": None, "notes": notes, "shift": shift, "delay": 0}
     unknown = sorted(set(new_items) - set(scene_index))
     if unknown:
         loose.append("слои элементов, которых нет в сцене: " + ", ".join(unknown))
@@ -366,12 +462,51 @@ def diff(scene, snapshot, edited, settings):
                 if layer.get("video", True) and not layer.get("item") and layer["name"] not in known]
     if untagged:
         loose.append("новые слои без элемента: " + ", ".join(untagged))
+    delays(result, items, snapshot.get("delay"), tol)
     order = expected_order(spans(old_items, scene_index), items, snapshot_adjust)
     moves, order_notes = order_changes(order, spans(new_items, scene_index), scene_index)
     loose += order_notes
     for ident, one in moves.items():
         result[ident]["order"] = one
     return result, loose
+
+
+def delays(result, items, built, tol):
+    """Сдвиг по времени в delay элементов: только ещё не перенесённая часть, без сдвига зависимых.
+
+    Элемент с after стоит от начала цели: её delay сдвигает и его, поэтому его delay получает обратную поправку.
+    Перенесённое после сборки (delay сцены против снимка) учитывается по всей цепочке after."""
+    by_id = {item_id(item, n): item for n, item in enumerate(items)}
+    # Снимок старше поля delay: считаем, что после сборки delay не меняли.
+    old_snapshot = not isinstance(built, dict)
+    done, rest = {}, {}
+
+    def applied(ident, depth=0):
+        if ident not in by_id or depth > len(items):
+            return 0
+        if ident not in done:
+            item = by_id[ident]
+            own = 0 if old_snapshot else (item.get("delay") or 0) - (built.get(ident) or 0)
+            done[ident] = own + (applied(item["after"], depth + 1) if item.get("after") is not None else 0)
+        return done[ident]
+
+    for ident, one in result.items():
+        item = by_id[ident]
+        if item.get("always"):
+            if one["shift"]:
+                one["notes"].append("элемент на всё видео: сдвиг по времени не переносится")
+            rest[ident] = 0
+            continue
+        left = one["shift"] - applied(ident)
+        rest[ident] = left if abs(left) > tol["seconds"] else 0
+        if rest[ident]:
+            one["change"]["shift"] = rest[ident]
+            if item.get("until_word") is not None:
+                one["notes"].append("конец остаётся на слове until_word")
+    for ident, one in result.items():
+        target = by_id[ident].get("after")
+        delta = rest[ident] - (rest.get(target, 0) if target is not None else 0)
+        one["delay"] = delta if abs(delta) > tol["seconds"] else 0
 
 
 def remaining(change, adjust, built, tol):
@@ -431,10 +566,17 @@ def apply(scene, result):
     count = 0
     for number, item in enumerate(scene.get("items", [])):
         one = result.get(item_id(item, number))
-        if not one or not (one["change"] or one["order"]):
+        if one and one.get("delay"):
+            delay = round((item.get("delay") or 0) + one["delay"], 3)
+            if delay:
+                item["delay"] = delay
+            else:
+                item.pop("delay", None)
+            count += 1
+        change = {key: value for key, value in (one or {}).get("change", {}).items() if key != "shift"}
+        if not one or not (change or one["order"]):
             continue
         adjust = dict(item.get("adjust") or {})
-        change = one["change"]
         if change.get("offset"):
             size = max(len(change["offset"]), len(adjust.get("offset") or []))
             adjust["offset"] = [round(x + y, 1) for x, y in zip(pad(adjust.get("offset"), size), pad(change["offset"], size))]
