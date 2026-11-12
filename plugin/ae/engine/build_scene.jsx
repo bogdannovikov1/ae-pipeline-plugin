@@ -63,6 +63,8 @@
         layerLog = {};
         built = [];
         trimmed = [];
+        muted = [];
+        Engine.soundLayers = {};
         return scene;
     }
 
@@ -89,6 +91,8 @@
     var replaying = false;
     // Layers cut by trim(): { item, layer, id, from, to } for the journal and the next append.
     var trimmed = [];
+    // Sounds removed by mute(): their objects were out of frame.
+    var muted = [];
 
     // An item cannot use an earlier one whose layers the author deleted: say which and why.
     function checkTargets(item, id) {
@@ -171,6 +175,35 @@
             if (mode) {
                 Engine.restack(layersOf(item.id || item.block + "_" + i), layersOf(adjust[mode]), mode);
             }
+        }
+    }
+
+    // Item id -> the layers it made, for every item of the scene.
+    function layersByItem(scene) {
+        var result = {};
+        for (var i = 0; i < scene.items.length; i++) {
+            var id = scene.items[i].id || scene.items[i].block + "_" + i;
+            result[id] = layersOf(id);
+        }
+        return result;
+    }
+
+    // Sounds of objects wholly out of frame go (settings ae.mute_offscreen, ae.offscreen_margin). Runs once the
+    // camera is in place, so frames are what the viewer sees. A probe null reads them and is removed after.
+    function mute(scene) {
+        var on = setting("MUTE_OFFSCREEN", "ae", "mute_offscreen");
+        var margin = setting("OFFSCREEN_MARGIN", "ae", "offscreen_margin");
+        if (!(on === true || on === 1) || typeof margin !== "number" || isNaN(margin)) {
+            return;
+        }
+        var byItem = layersByItem(scene);
+        Engine.probe = Engine.comp.layers.addNull();
+        Engine.probe.name = "ae-video probe";
+        try {
+            muted = Engine.muteOffscreen(Engine.comp, byItem, margin);
+        } finally {
+            Engine.probe.remove();
+            Engine.probe = null;
         }
     }
 
@@ -429,6 +462,7 @@
             restack(scene, from);
             freeze = { seam: seam === null ? null : Math.round(seam * 1000) / 1000,
                 fixes: seam === null ? [] : Engine.freezeFix(snapshot, seam) };
+            mute(scene);
             trim(scene);
         } finally {
             Engine.seam = null;
@@ -587,6 +621,7 @@
         addCamera();
         Engine.endWithTargets(built);
         restack(scene, 0);
+        mute(scene);
         trim(scene);
         markBuild(Engine.comp, c.name, false);
         removeOldBuilds(c.name, Engine.comp, setting("KEEP_BUILDS", "ae", "keep_builds"));
@@ -606,7 +641,8 @@
 
     function writeJournal(scenePath) {
         var sounds = oldSounds ? oldSounds.concat(Engine.soundLog) : Engine.soundLog;
-        var journal = { sounds: sounds, starts: Engine.starts, layers: layerLog, trimmed: trimmed };
+        var journal = { sounds: sounds, starts: Engine.starts, layers: layerLog, trimmed: trimmed,
+            muted: oldJournal && oldJournal.muted ? oldJournal.muted.concat(muted) : muted };
         if (freeze) {
             journal.freeze = freeze;
         }

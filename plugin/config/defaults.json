@@ -34,6 +34,8 @@
     "keep_builds": 1,
     "trim_hidden": true,
     "trim_pad": 0.5,
+    "mute_offscreen": true,
+    "offscreen_margin": 0,
     "apps_dir": "/Applications",
     "ready_check_timeout": 20,
     "ready_check_pause": 3,

@@ -442,7 +442,9 @@ assert.ok(!E.layerRefs("thisLayer.position").unknown);
     assert.strictEqual(voice.outPoint, 30, "голос не трогаем");
     assert.strictEqual(sfx.outPoint, 30, "звук элемента не трогаем");
     assert.strictEqual(ended.outPoint, 4.5, "раньше уже обрезанный не удлиняем");
-    assert.deepStrictEqual(cut.map((c) => [c.item, c.layer, c.from, c.to]), [["a", "plain", 30, 5], ["b", "back", 30, 11]]);
+    assert.deepStrictEqual(cut.map((c) => [c.item, c.layer, c.from, c.to, c.in_from, c.in_to]), [
+        ["a", "plain", 30, 5, 0, 0.5], ["b", "back", 30, 11, 0, 0.5], ["c", "stays", undefined, undefined, 0, 0.5],
+        ["d", "ended", undefined, undefined, 0, 0.5]]);
 }
 {
     const parent = trimLayer("a", "parent", gone);
@@ -538,6 +540,105 @@ assert.ok(!E.layerRefs("thisLayer.position").unknown);
     const fresh = trimLayer("new", "new", [[20, 0], [20.5, 100]], { inPoint: 20 });
     E.trimHidden(comp, [{ targets: ["a"], layers: [fresh] }], 0.5);
     assert.strictEqual(kept.outPoint, 30, "старый слой, который снова нужен, не обрезан");
+}
+
+// Обрезка начала: слой появляется только тогда, когда становится видимым.
+assert.strictEqual(E.hiddenBefore(trimLayer("a", "x", gone)), 1, "последний ноль перед первым появлением");
+assert.strictEqual(E.hiddenBefore(trimLayer("a", "x", [[1, 100], [2, 0]])), null, "виден с самого начала");
+assert.strictEqual(E.hiddenBefore(trimLayer("a", "x", [[0, 0], [1, 0, null, null, { speed: 30 }], [2, 100]])), null,
+    "кривая между нулями до появления может выйти выше 0");
+assert.strictEqual(E.hiddenBefore(trimLayer("a", "x", gone, { expression: "100" })), null, "выражение на opacity");
+{
+    const late = trimLayer("a", "late", [[5, 0], [5.5, 100]]);
+    const parent = trimLayer("b", "parent", [[6, 0], [6.5, 100]]);
+    const child = trimLayer("c", "child", [[3, 0], [3.5, 100]], { parent });
+    const voice = trimLayer(null, "voice", [], { hasVideo: false });
+    const rig = trimLayer("m", "rig", [], { nullLayer: true });
+    const kid = trimLayer("k", "kid", [[8, 0], [8.5, 100]], { parent: rig });
+    const target = trimLayer("t", "cell", [[10, 0], [10.5, 100]]);
+    const user = trimLayer("u", "ring", [[4, 0], [4.5, 100]]);
+    const reader = trimLayer("r", "label", [[2, 0], [2.5, 100]]);
+    reader.props.push(exprProp('thisComp.layer("cell").transform.position'));
+    reader.numProperties = reader.props.length;
+    const cut = E.trimHidden(trimComp([late, parent, child, voice, rig, kid, target, user, reader]),
+        [{ targets: ["t"], layers: [user] }], 0.5);
+    assert.ok(near(late.inPoint, 4.5), "начало слоя за запас до первого появления");
+    assert.ok(near(child.inPoint, 2.5) && near(parent.inPoint, 2.5), "родитель начинается не позже ребёнка");
+    assert.strictEqual(voice.inPoint, 0, "звук не трогаем");
+    assert.ok(near(kid.inPoint, 7.5) && near(rig.inPoint, 7.5), "нуль начинается со своим ребёнком");
+    assert.ok(near(target.inPoint, 1.5), "цель начинается не позже элемента и выражения, которые её читают");
+    assert.strictEqual(cut.find((c) => c.layer === "late").to, undefined, "конец не менялся: пары from, to нет");
+    const comp = trimComp([late]);
+    assert.strictEqual(E.untrim(comp, cut.filter((c) => c.layer === "late")), 1);
+    assert.strictEqual(late.inPoint, 0, "дописывание возвращает прежнее начало");
+}
+{
+    const odd = trimLayer("a", "odd", [[1.27, 0], [1.5, 100]]);
+    E.trimHidden(trimComp([odd]), [], 0.5);
+    assert.ok(near(odd.inPoint, 0.7), "начало округлено вниз до кадра");
+    const wide = trimLayer("a", "wide", [[0.3, 0], [0.5, 100]]);
+    E.trimHidden(trimComp([wide]), [], 0.5);
+    assert.strictEqual(wide.inPoint, 0, "запас длиннее начала: не трогаем");
+}
+
+// Звук объектов вне кадра не ставится; у серии выпадают только удары элементов вне кадра.
+{
+    const boxes = {};
+    E.screenBox = (layer, t) => boxes[layer.name];
+    function visual(item, name, keys, box) {
+        const layer = trimLayer(item, name, keys);
+        layer.opacity.valueAtTime = (t) => {
+            let v = keys.length ? keys[0][1] : 100;
+            keys.forEach(([kt, kv]) => { if (t >= kt) v = kv; });
+            return v;
+        };
+        boxes[name] = box;
+        return layer;
+    }
+    function soundLayer(entry) {
+        const layer = trimLayer(entry.item, "snd " + entry.sound, [], { hasVideo: false });
+        layer.remove = () => { layer.removed = true; };
+        E.soundLayers[layer.id] = entry;
+        E.soundLog.push(entry);
+        return layer;
+    }
+    const inside = [100, 100, 300, 200];
+    const outside = [2100, 100, 2300, 200];
+    const asBox = (b) => b && { left: b[0], top: b[1], right: b[2], bottom: b[3] };
+    Object.keys(boxes).forEach((k) => delete boxes[k]);
+    E.soundLog = [];
+    E.soundLayers = {};
+    const seen = visual("seen", "seen box", [[1, 0], [1.2, 100]], asBox(inside));
+    const away = visual("away", "away box", [[1, 0], [1.2, 100]], asBox(outside));
+    const half = [visual("half", "half in", [[1, 0], [1.2, 100]], asBox(inside)), visual("half", "half out", [[1, 0], [1.2, 100]], asBox(outside))];
+    const cells = [0, 1, 2, 3].map((k) => visual("row", "cell " + k, [[1 + k * 0.5, 0], [1.1 + k * 0.5, 100]],
+        asBox(k < 2 ? inside : outside)));
+    const ghost = visual("ghost", "ghost", [[1, 0], [5, 0]], asBox(outside));
+    const unknown = visual("unknown", "unknown", [[1, 0], [1.2, 100]], null);
+    const single = (item) => ({ item, sound: item, event: "pop", role: "single", series: null, hit: 1.5,
+        animation_start: 1, animation_end: 2 });
+    const sounds = ["seen", "away", "half", "ghost", "unknown"].map((item) => soundLayer(single(item)));
+    const strikes = [0, 1, 2, 3].map((k) => soundLayer({ item: "row", sound: "tick", event: "group", role: "series",
+        series: "row/0", hit: 1.15 + k * 0.5, animation_start: 1, animation_end: 3 }));
+    const voice = trimLayer(null, "voice", [], { hasVideo: false });
+    const list = [seen, away, ...half, ...cells, ghost, unknown, ...sounds, ...strikes, voice];
+    const comp = Object.assign(trimComp(list), { width: 1920, height: 1080, frameDuration: 0.04 });
+    const muted = E.muteOffscreen(comp, { seen: [seen], away: [away], half, row: cells, ghost: [ghost], unknown: [unknown] }, 0);
+    const gone = (l) => !!l.removed;
+    assert.deepStrictEqual(sounds.map(gone), [false, true, false, false, false],
+        "в кадре звучит, вне кадра нет, частично в кадре звучит, невидимый и неизвестный остаются");
+    assert.deepStrictEqual(strikes.map(gone), [false, false, true, true], "серия теряет только удары элементов вне кадра");
+    assert.deepStrictEqual(muted.map((m) => [m.item, m.at]), [["away", 1.5], ["row", 2.15], ["row", 2.65]]);
+    assert.strictEqual(E.soundLog.length, 6, "убранные звуки уходят и из журнала");
+    assert.ok(!voice.removed, "голос не трогаем");
+    E.muteOffscreen(comp, { away: [away] }, -10);
+    assert.ok(!E.soundLog.some((e) => e.item === "away"));
+    boxes["seen box"] = { left: -195, top: 100, right: -5, bottom: 200 };
+    E.soundLog = []; E.soundLayers = {};
+    const edge = soundLayer(single("seen"));
+    E.muteOffscreen(Object.assign(trimComp([seen, edge]), { width: 1920, height: 1080, frameDuration: 0.04 }), { seen: [seen] }, -10);
+    assert.ok(!edge.removed, "отрицательный порог: объект рядом с краем ещё считается видимым");
+    E.soundLog = []; E.soundLayers = {};
 }
 
 console.log("Движок в порядке");
