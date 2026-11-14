@@ -481,11 +481,8 @@ class Extend(Case):
         self.write_scene(self.scene(items=[{"id": "x", "block": "label", "at_word": 1}]))
         with self.assertRaises(PipelineError):
             f.done("build")
+        # Новый элемент может брать целью старый: движок найдёт его слои в дополняемой композиции.
         new = {"id": "b", "block": "label", "at_word": 4, "params": {"target": "a"}}
-        self.write_scene(self.scene(items=old + [new]))
-        with self.assertRaises(PipelineError):
-            f.done("build")
-        new["params"] = {}
         self.write_scene(self.scene(items=old + [new]))
         f.done("build")
         self.assertEqual(f.next_action()["extension"]["from_time"], 10.0)
@@ -500,6 +497,19 @@ class Extend(Case):
         self.write("F1.timeline.json", merged)
         with self.assertRaises(PipelineError):
             f.done("transcript")
+
+    def test_author_can_change_old_part_with_force(self):
+        f = self.extended()
+        f.start("plan")
+        hash_ = self.merged()["transcript_hash"]
+        self.write("F1.animation.json", {"transcript_hash": hash_, "beats": [{"at_word": 1}, {"at_word": 4}]})
+        with self.assertRaises(PipelineError):
+            f.done("plan")
+        f.done("plan", force=True)
+        self.assertEqual(f.status("plan"), "review")
+        f.approve("plan")
+        # Снимок защиты обновлён: следующая проверка сравнивает с решением автора.
+        self.assertEqual(f.check_extension(f.stage("plan")), [])
 
     def extended(self):
         f = self.polished()

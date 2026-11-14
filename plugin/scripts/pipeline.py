@@ -191,7 +191,7 @@ class Fragment(ExtensionMixin, RoundsMixin):
         )
         self.save()
 
-    def check_outputs(self, stage, final):
+    def check_outputs(self, stage, final, force=False):
         """Проверяет выходы этапа: файлы на месте и проверка из pipeline.json пройдена."""
         errors = []
         for name in self.names(stage["outputs"]):
@@ -204,7 +204,7 @@ class Fragment(ExtensionMixin, RoundsMixin):
             if not errors and stage.get("needs_build"):
                 errors = check_built(path)
         if not errors and self.state.get("parts"):
-            errors = self.check_extension(stage)
+            errors = self.check_extension(stage, force)
         return errors
 
     def start(self, stage_id, force=False):
@@ -232,7 +232,7 @@ class Fragment(ExtensionMixin, RoundsMixin):
         self.state["stages"][stage_id]["skipped"] = True
         self.seal(stage, "approved")
 
-    def done(self, stage_id):
+    def done(self, stage_id, force=False):
         stage = self.stage(stage_id)
         self.refresh()
         # Правка готовой сцены завершается без start: иначе она зря перезапускала бы этап.
@@ -241,7 +241,7 @@ class Fragment(ExtensionMixin, RoundsMixin):
             raise PipelineError(f"Этап {stage_id} не запущен")
         if stage["review"] == "rounds":
             raise PipelineError("Предревью завершает команда round")
-        errors = self.check_outputs(stage, final=False)
+        errors = self.check_outputs(stage, final=False, force=force)
         if errors:
             raise PipelineError("; ".join(errors))
         if stage["review"] == "once":
@@ -349,7 +349,7 @@ def main():
     parser.add_argument("--audio-from", help="для init: перенести готовую запись из этого пути в папку фрагмента")
     parser.add_argument("--from-text", action="store_true", help="для init: записи нет, голос будет озвучен из текста")
     parser.add_argument("--note", help="для reject: что исправить")
-    parser.add_argument("--force", action="store_true", help="для start: пересобрать этап с ручными правками")
+    parser.add_argument("--force", action="store_true", help="для start: пересобрать этап с ручными правками; для done: автор сам изменил старую часть расширенного фрагмента")
     args = parser.parse_args()
 
     fragment = Fragment(args.video, args.fragment)
@@ -387,7 +387,7 @@ def main():
             elif args.command == "finish":
                 fragment.finish(args.stage)
             elif args.command == "done":
-                check = fragment.done(args.stage)
+                check = fragment.done(args.stage, args.force)
             elif args.command == "approve":
                 fragment.approve(args.stage)
             else:

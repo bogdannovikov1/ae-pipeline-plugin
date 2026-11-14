@@ -46,9 +46,12 @@ class ExtensionMixin:
             "items": list_hash(items),
         }
 
-    def check_extension(self, stage):
-        """Этап добавляет только новое: старое должно остаться как было."""
+    def check_extension(self, stage, force=False):
+        """Этап добавляет только новое: старое должно остаться как было.
+        force: автор сам решил изменить старую часть, снимок защиты берётся заново."""
         keep = self.state["parts"][-1]["keep"]
+        if force:
+            self.accept_old(stage["id"], keep)
         if stage["id"] == "transcript":
             words = self.read("timeline")["words"]
             if len(words) <= keep["first_word"]:
@@ -63,19 +66,24 @@ class ExtensionMixin:
             return self.check_items(keep)
         return []
 
+    def accept_old(self, stage_id, keep):
+        """Запоминает старую часть такой, какой её сделало решение автора."""
+        if stage_id == "transcript":
+            words = self.read("timeline")["words"]
+            keep["words"] = list_hash(kept_words(words[:keep["first_word"]]))
+        elif stage_id == "plan":
+            keep["beats"] = list_hash(self.read("animation")["beats"][:keep["beats_from"]])
+        elif stage_id == "build":
+            keep["items"] = list_hash(self.read("scene")["items"][:keep["items_from"]])
+
     def check_items(self, keep):
         items = self.read("scene")["items"]
         start = keep["items_from"]
         if list_hash(items[:start]) != keep["items"]:
             return ["расширение изменило старые элементы сцены"]
-        if not self.state["parts"][-1]["append"]:
-            return []
-        old = {item.get("id") or f"{item.get('block')}_{n}" for n, item in enumerate(items[:start])}
-        return [
-            f"{item.get('id')}: цель {item['params']['target']} собрана раньше, в дополняемой композиции она недоступна"
-            for item in items[start:]
-            if item.get("params", {}).get("target") in old
-        ]
+        # Новые элементы могут брать целью старые: движок находит их слои в дополняемой композиции
+        # и сам падает с id элемента, если автор удалил слой цели.
+        return []
 
     def extend(self, audio):
         """Начинает новую часть фрагмента: всё утверждённое остаётся, этапы идут только для добавленного."""
