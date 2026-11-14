@@ -346,7 +346,7 @@ def motion_warnings(layout, scene, data, settings):
         shown = lambda s: s[1] > 1 and (len(s) < 7 or s[6])
         item = items.get(name, {})
         start = words[item["at_word"]]["start"] if "at_word" in item and item["at_word"] < len(words) else None
-        until = words[item["until_word"]]["end"] if "until_word" in item and item["until_word"] < len(words) else None
+        until = words[item["until_word"]]["end"] + item.get("until_delay", 0) if "until_word" in item and item["until_word"] < len(words) else None
         visible = [s for s in samples if shown(s)]
         if not visible:
             report(name, "never", f"слой «{track['layer']}» ни разу не виден")

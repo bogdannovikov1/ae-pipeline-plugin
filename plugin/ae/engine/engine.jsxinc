@@ -51,7 +51,8 @@ $.global.Engine = (function () {
     };
 
     E.endTime = function (spec) {
-        return spec.until_word === undefined ? null : E.timeline.words[spec.until_word].end;
+        // until_delay shifts the exit from the end of until_word: a row can leave one by one.
+        return spec.until_word === undefined ? null : E.timeline.words[spec.until_word].end + (spec.until_delay || 0);
     };
 
     function easeSize(prop) {
