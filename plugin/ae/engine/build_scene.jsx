@@ -63,6 +63,9 @@
         Engine.editsLost = [];
         layerLog = {};
         built = [];
+        trimmed = [];
+        muted = [];
+        Engine.soundLayers = {};
         return scene;
     }
 
@@ -87,6 +90,10 @@
     // so an append can find the same objects after manual edits.
     var layerLog = {};
     var replaying = false;
+    // Layers cut by trim(): { item, layer, id, from, to } for the journal and the next append.
+    var trimmed = [];
+    // Sounds removed by mute(): their objects were out of frame.
+    var muted = [];
 
     // An item cannot use an earlier one whose layers the author deleted: say which and why.
     function checkTargets(item, id) {
@@ -174,6 +181,52 @@
                 Engine.restack(layersOf(item.id || item.block + "_" + i), layersOf(adjust[mode]), mode);
             }
         }
+    }
+
+    // Item id -> the layers it made, for every item of the scene.
+    function layersByItem(scene) {
+        var result = {};
+        for (var i = 0; i < scene.items.length; i++) {
+            var id = scene.items[i].id || scene.items[i].block + "_" + i;
+            result[id] = layersOf(id);
+        }
+        return result;
+    }
+
+    // Sounds of objects wholly out of frame go (settings ae.mute_offscreen, ae.offscreen_margin). Runs once the
+    // camera is in place, so frames are what the viewer sees. A probe null reads them and is removed after.
+    function mute(scene) {
+        var on = setting("MUTE_OFFSCREEN", "ae", "mute_offscreen");
+        var margin = setting("OFFSCREEN_MARGIN", "ae", "offscreen_margin");
+        if (!(on === true || on === 1) || typeof margin !== "number" || isNaN(margin)) {
+            return;
+        }
+        var byItem = layersByItem(scene);
+        Engine.probe = Engine.comp.layers.addNull();
+        Engine.probe.name = "ae-video probe";
+        try {
+            muted = Engine.muteOffscreen(Engine.comp, byItem, margin);
+        } finally {
+            Engine.probe.remove();
+            Engine.probe = null;
+        }
+    }
+
+    // Layers that went to opacity 0 for good are cut a little after it (settings ae.trim_hidden, ae.trim_pad).
+    // Every item of the scene counts as a reader of its targets, the frozen part of an append too.
+    function trim(scene) {
+        var on = setting("TRIM_HIDDEN", "ae", "trim_hidden");
+        var pad = setting("TRIM_PAD", "ae", "trim_pad");
+        if (!(on === true || on === 1) || typeof pad !== "number" || isNaN(pad) || pad < 0) {
+            return;
+        }
+        var links = [];
+        for (var i = 0; i < scene.items.length; i++) {
+            var item = scene.items[i];
+            var id = item.id || item.block + "_" + i;
+            links.push({ targets: Engine.targetsOf(item), layers: layersOf(id) });
+        }
+        trimmed = Engine.trimHidden(Engine.comp, links, pad);
     }
 
     // Each recorded part of a fragment gets its own voice layer at its place on the timeline.
@@ -393,6 +446,8 @@
             frozen.push(comp.layer(n));
             comp.layer(n).locked = false;
         }
+        // What the last build cut comes back first: the new part may use it, and it is cut again below if still hidden.
+        Engine.untrim(comp, oldJournal ? oldJournal.trimmed : null);
         lengthen(comp, words[words.length - 1].end + scene.tail);
         addVoices(scene);
         replayOld(scene, from);
@@ -412,6 +467,8 @@
             restack(scene, from);
             freeze = { seam: seam === null ? null : Math.round(seam * 1000) / 1000,
                 fixes: seam === null ? [] : Engine.freezeFix(snapshot, seam) };
+            mute(scene);
+            trim(scene);
         } finally {
             Engine.seam = null;
             for (var k = 0; k < frozen.length; k++) {
@@ -569,6 +626,8 @@
         addCamera();
         Engine.endWithTargets(built);
         restack(scene, 0);
+        mute(scene);
+        trim(scene);
         markBuild(Engine.comp, c.name, false);
         removeOldBuilds(c.name, Engine.comp, setting("KEEP_BUILDS", "ae", "keep_builds"));
         Engine.comp.openInViewer();
@@ -587,7 +646,8 @@
 
     function writeJournal(scenePath) {
         var sounds = oldSounds ? oldSounds.concat(Engine.soundLog) : Engine.soundLog;
-        var journal = { sounds: sounds, starts: Engine.starts, layers: layerLog };
+        var journal = { sounds: sounds, starts: Engine.starts, layers: layerLog, trimmed: trimmed,
+            muted: oldJournal && oldJournal.muted ? oldJournal.muted.concat(muted) : muted };
         if (freeze) {
             journal.freeze = freeze;
         }

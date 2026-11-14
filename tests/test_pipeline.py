@@ -846,6 +846,21 @@ class Layout(Case):
     def test_hidden_layer_ignored(self):
         self.assertEqual(self.warnings(self.box("a", 20, 200, 500, 300, opacity=0)), [])
 
+    def test_text_gone_to_zero_does_not_overlap(self):
+        """Слой ушёл в 0 по выборкам tracks, но не обрезан: после ухода он ничего не перекрывает."""
+        first = self.box("a", 200, 200, 500, 300, time=1, until=30)
+        second = self.box("b", 200, 200, 500, 300, time=9, until=30)
+        track = {"item": "a", "layer": "a", "in": 0, "out": 30, "text": True,
+                 "samples": [[1, 100, 200, 200, 500, 300, 1], [4, 100, 200, 200, 500, 300, 1], [4.5, 0, 200, 200, 500, 300, 1]]}
+        layout = {"width": 1920, "height": 1080, "boxes": [first, second], "tracks": [track]}
+        self.assertEqual(layout_warnings(layout, self.cfg), [])
+        track["samples"].append([10, 100, 200, 200, 500, 300, 1])
+        self.assertIn("перекрывает", layout_warnings(layout, self.cfg)[0])
+
+    def test_trimmed_layer_does_not_overlap(self):
+        first = self.box("a", 200, 200, 500, 300, time=1, until=5)
+        self.assertEqual(self.warnings(first, self.box("b", 200, 200, 500, 300, time=9, until=30)), [])
+
 
 class OptionalPreflight(Case):
     def built(self):

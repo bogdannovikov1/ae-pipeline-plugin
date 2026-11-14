@@ -127,6 +127,10 @@ def build_values(scene_path, settings, append_from=None):
         "SCENE_PATH": Path(scene_path).resolve(),
         "BASES_DIR": bases_dir(settings),
         "KEEP_BUILDS": settings["ae"].get("keep_builds", 1),
+        "TRIM_HIDDEN": 1 if settings["ae"]["trim_hidden"] else 0,
+        "TRIM_PAD": settings["ae"]["trim_pad"],
+        "MUTE_OFFSCREEN": 1 if settings["ae"]["mute_offscreen"] else 0,
+        "OFFSCREEN_MARGIN": settings["ae"]["offscreen_margin"],
     }
     if append_from is not None:
         values["APPEND_FROM"] = append_from
