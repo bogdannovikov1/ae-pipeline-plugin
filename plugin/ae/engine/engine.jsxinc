@@ -93,7 +93,9 @@ $.global.Engine = (function () {
 
     // One continuous spring: a fast launch, a single small overshoot and a soft settle.
     // Damping is derived from the travel, so the overshoot stays the same size for any distance.
-    E.spring = function (layer, arrive, from, to) {
+    // The curve is baked into frame keys: the author can slide the layer in time, move or delete keys, and
+    // ae_run.py diff sees them. Only the calm drift stays an expression over the keyed position.
+    E.springKeys = function (arrive, from, to, frame) {
         var token = E.tokens.motion.spring;
         var dx = from[0] - to[0];
         var dy = from[1] - to[1];
@@ -101,13 +103,32 @@ $.global.Engine = (function () {
         var w = token.frequency;
         var k = -Math.log(token.overshoot / distance) * w / Math.PI;
         var start = arrive - Math.PI / (2 * w);
-        var drift = "Math.sin(time * " + E.tokens.motion.float_speed + ") * " + E.tokens.motion.float_shift;
+        var rest = token.rest === undefined ? 0.5 : token.rest;
+        // The swing is under rest pixels from here on: the last key lands on the target.
+        var settle = distance > rest ? Math.log(distance / rest) / k : 0;
+        var steps = Math.max(1, Math.ceil(settle / frame));
+        var times = [];
+        var values = [];
+        for (var n = 0; n <= steps; n++) {
+            var t = n * frame;
+            var s = n === steps ? 0 : Math.exp(-k * t) * Math.cos(w * t);
+            times.push(start + t);
+            values.push([to[0] + dx * s, to[1] + dy * s, 0]);
+        }
+        return { start: start, times: times, values: values };
+    };
+
+    E.spring = function (layer, arrive, from, to) {
+        var keys = E.springKeys(arrive, from, to, E.comp.frameDuration);
         layer.threeDLayer = true;
-        layer.position.setValue([to[0], to[1], 0]);
-        layer.position.expression = "var t = Math.max(time - " + start + ", 0);\n" +
-            "var s = Math.exp(-" + k + " * t) * Math.cos(" + w + " * t);\n" +
-            "[" + to[0] + " + " + dx + " * s, " + to[1] + " + " + dy + " * s + " + drift + ", 0];";
-        return start;
+        layer.position.setValuesAtTimes(keys.times, keys.values);
+        // Straight path between the frame keys: auto-bezier would bulge past the overshoot.
+        for (var n = 0; n < keys.times.length; n++) {
+            var index = layer.position.nearestKeyIndex(keys.times[n]);
+            layer.position.setSpatialTangentsAtKey(index, [0, 0, 0], [0, 0, 0]);
+        }
+        E.float(layer);
+        return keys.start;
     };
 
     E.fadeIn = function (layer, t, duration) {
@@ -263,6 +284,119 @@ $.global.Engine = (function () {
                 mapValue(transform.property("ADBE Rotate Z"), function (v) { return v + turn; });
             }
         }
+    };
+
+    // adjust.layers: per layer of the item the author's own value or keys, replayed after the block and adjust.
+    // A layer is named as ae_run.py diff names it: its name, and "name#2"... among same-named video layers of the
+    // item, top first. Key times count from the item start, so a later delay carries them.
+    var EDIT_PROPS = { position: "ADBE Position", scale: "ADBE Scale", rotation: "ADBE Rotate Z",
+        opacity: "ADBE Opacity", anchor: "ADBE Anchor Point" };
+
+    E.layerKeys = function (layers) {
+        var video = [];
+        var i;
+        for (i = 0; i < layers.length; i++) {
+            if (layers[i].hasVideo) {
+                video.push(layers[i]);
+            }
+        }
+        video.sort(function (a, b) { return a.index - b.index; });
+        var named = {};
+        for (i = 0; i < video.length; i++) {
+            var key = video[i].name;
+            var number = 1;
+            while (named[key]) {
+                number += 1;
+                key = video[i].name + "#" + number;
+            }
+            named[key] = video[i];
+        }
+        return named;
+    };
+
+    function fit(value, like) {
+        if (!(like instanceof Array) || !(value instanceof Array)) {
+            return value;
+        }
+        var out = [];
+        for (var i = 0; i < like.length; i++) {
+            out.push(i < value.length ? value[i] : like[i]);
+        }
+        return out;
+    }
+
+    function easeOf(list) {
+        var out = [];
+        for (var i = 0; i < list.length; i++) {
+            out.push(new KeyframeEase(list[i][0], Math.min(100, Math.max(0.1, list[i][1]))));
+        }
+        return out;
+    }
+
+    function curveAt(prop, k, curve) {
+        if (!curve) {
+            return;
+        }
+        // Each part on its own: a hold key has no ease, a 1D property no tangents.
+        try {
+            prop.setInterpolationTypeAtKey(k, curve.i[0], curve.i[1]);
+        } catch (e1) {}
+        try {
+            prop.setTemporalEaseAtKey(k, easeOf(curve.e[0]), easeOf(curve.e[1]));
+        } catch (e2) {}
+        if (curve.s && prop.isSpatial) {
+            try {
+                prop.setSpatialTangentsAtKey(k, curve.s[0], curve.s[1]);
+            } catch (e3) {}
+        }
+    }
+
+    E.setEdit = function (prop, edit, start) {
+        var like = rest(prop);
+        while (prop.numKeys) {
+            prop.removeKey(1);
+        }
+        if (!edit.keys) {
+            prop.setValue(fit(edit.v, like));
+            return;
+        }
+        var times = [];
+        var values = [];
+        var k;
+        for (k = 0; k < edit.keys.length; k++) {
+            times.push(start + edit.keys[k][0]);
+            values.push(fit(edit.keys[k][1], like));
+        }
+        prop.setValuesAtTimes(times, values);
+        for (k = 0; k < edit.keys.length; k++) {
+            curveAt(prop, prop.nearestKeyIndex(times[k]), edit.keys[k][2]);
+        }
+    };
+
+    // Returns the layer names it did not find: the block changed since the author's edit.
+    E.layerEdits = function (layers, edits, start) {
+        var lost = [];
+        if (!edits) {
+            return lost;
+        }
+        var named = E.layerKeys(layers);
+        for (var key in edits) {
+            if (!edits.hasOwnProperty(key)) {
+                continue;
+            }
+            var layer = named[key];
+            var transform = layer ? layer.property("ADBE Transform Group") : null;
+            if (!transform) {
+                lost.push(key);
+                continue;
+            }
+            for (var name in edits[key]) {
+                if (edits[key].hasOwnProperty(name) && EDIT_PROPS[name]) {
+                    E.setEdit(transform.property(EDIT_PROPS[name]), edits[key][name], start);
+                }
+            }
+        }
+        return lost;
     };
 
     // adjust.below / adjust.above: the item's layers go right under the lowest or over the highest layer of

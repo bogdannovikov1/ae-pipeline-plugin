@@ -134,7 +134,20 @@ def adjust_errors(item, ids, label):
     for key in ("below", "above"):
         if key in adjust and (adjust[key] not in ids or adjust[key] == item.get("id")):
             errors.append(f"{label}: adjust.{key} ссылается на {adjust[key]}, такого другого элемента нет")
-    unknown = set(adjust) - {"offset", "scale", "rotation", "below", "above"}
+    layers = adjust.get("layers")
+    if layers is not None:
+        props = {"position", "scale", "rotation", "opacity", "anchor"}
+        good = isinstance(layers, dict) and all(
+            isinstance(one, dict) and set(one) <= props and all(
+                isinstance(edit, dict) and (("v" in edit) != ("keys" in edit))
+                and (isinstance(edit.get("keys"), list) and all(isinstance(k, list) and len(k) >= 2 and isinstance(k[0], number)
+                                                               for k in edit["keys"]) if "keys" in edit else True)
+                for edit in one.values())
+            for one in layers.values())
+        if not good:
+            errors.append(f"{label}: adjust.layers — {{слой: {{свойство: {{v}} или {{keys: [[время, значение, изгиб]]}}}}}}, "
+                          f"свойства {', '.join(sorted(props))}")
+    unknown = set(adjust) - {"offset", "scale", "rotation", "below", "above", "layers"}
     if unknown:
         errors.append(f"{label}: в adjust неизвестные поля {', '.join(sorted(unknown))}")
     return errors

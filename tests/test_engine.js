@@ -371,4 +371,68 @@ E.restack([bg], [o1, o2], "above");
 assert.deepStrictEqual(stack.map((l) => l.name), ["bg", "o1", "o2", "z1", "z2"], "над верхним слоем");
 E.restack([], [o1], "below");
 
+// Пружина запечена в ключи кадров: без выражения движения, только плавание поверх ключей.
+E.tokens.motion = Object.assign({}, E.tokens.motion, { float_speed: 1.2, float_shift: 3, spring: { frequency: 8, overshoot: 16 } });
+const sk = E.springKeys(2, [2400, 0], [0, 0], 1 / 30);
+assert.ok(near(sk.start, 2 - Math.PI / 16) && near(sk.times[0], sk.start), "старт до слова на четверть периода");
+assert.deepStrictEqual(sk.values[0], [2400, 0, 0], "первый ключ в начале пути");
+assert.deepStrictEqual(sk.values[sk.values.length - 1], [0, 0, 0], "последний ключ на месте");
+const xs = sk.values.map((v) => v[0]);
+const kk = -Math.log(16 / 2400) * 8 / Math.PI;
+assert.ok(sk.times.slice(0, -1).every((t, n) => near(xs[n], 2400 * Math.exp(-kk * (t - sk.start)) * Math.cos(8 * (t - sk.start)))),
+    "ключи повторяют прежнюю формулу пружины");
+assert.ok(Math.abs(xs[xs.length - 2]) < 0.5, "к последнему ключу пружина успокоилась");
+const cross = sk.times[xs.findIndex((x) => x <= 0)];
+assert.ok(Math.abs(cross - 2) <= 1 / 30, "доезжает к слову");
+assert.ok(sk.times.length < 40, "ключей не больше, чем нужно до покоя");
+const springLayer = { position: {
+    tangents: 0,
+    setValuesAtTimes(t, v) { this.times = t; this.values = v; },
+    nearestKeyIndex(t) { return this.times.indexOf(t) + 1; },
+    setSpatialTangentsAtKey() { this.tangents++; },
+} };
+E.comp = { frameDuration: 1 / 30 };
+assert.ok(near(E.spring(springLayer, 2, [2400, 0], [0, 0]), sk.start));
+assert.strictEqual(springLayer.position.values.length, sk.values.length, "ключи на позиции");
+assert.strictEqual(springLayer.position.tangents, sk.values.length, "прямой путь между ключами");
+assert.ok(springLayer.threeDLayer && !/exp|cos/.test(springLayer.position.expression), "в выражении только плавание");
+assert.ok(/^value \+/.test(springLayer.position.expression));
+
+// adjust.layers: ключи автора ставятся заново со временем от начала элемента и изгибом.
+global.KeyframeEase = function (speed, influence) { this.speed = speed; this.influence = influence; };
+function editProp(value, keys) {
+    return {
+        value, keys: keys || [], curves: {}, isSpatial: true,
+        get numKeys() { return this.keys.length; },
+        removeKey(k) { this.keys.splice(k - 1, 1); },
+        setValue(v) { this.value = v; },
+        valueAtTime() { return this.value; },
+        setValuesAtTimes(t, v) { this.keys = t.map((time, n) => [time, v[n]]); },
+        nearestKeyIndex(t) { return this.keys.findIndex((k) => k[0] === t) + 1; },
+        setInterpolationTypeAtKey(k, a, b) { this.curves[k] = { i: [a, b] }; },
+        setTemporalEaseAtKey(k, a, b) { this.curves[k].e = [a, b]; },
+        setSpatialTangentsAtKey(k, a, b) { this.curves[k].s = [a, b]; },
+    };
+}
+function editLayer(name, index, props) {
+    return { name, index, hasVideo: true, property: () => ({ property: (n) => props[n] }) };
+}
+const pos = editProp([0, 0, 0], [[1, [5, 5, 0]]]);
+const op = editProp(100);
+const second = editLayer("chip", 3, { "ADBE Position": pos, "ADBE Opacity": op });
+const first = editLayer("chip", 2, { "ADBE Position": editProp([1, 1, 0]) });
+const lost = E.layerEdits([second, first, { name: "beep", index: 1, hasVideo: false }], {
+    "chip#2": {
+        position: { keys: [[0.5, [10, 20], { i: [6613, 6612], e: [[[0, 33]], [[0, 80]]], s: [[0, 0, 0], [1, 0, 0]] }], [1, [30, 20, 0]]] },
+        opacity: { v: 50 },
+    },
+    "gone": { opacity: { v: 0 } },
+}, 2);
+assert.deepStrictEqual(lost, ["gone"], "потерянный слой назван");
+assert.deepStrictEqual(pos.keys, [[2.5, [10, 20, 0]], [3, [30, 20, 0]]], "старые ключи убраны, время от начала элемента");
+assert.deepStrictEqual(pos.curves[1].i, [6613, 6612]);
+assert.strictEqual(pos.curves[1].e[1][0].influence, 80, "изгиб ключа");
+assert.deepStrictEqual(pos.curves[1].s[1], [1, 0, 0], "касательные пути");
+assert.strictEqual(op.value, 50, "значение без ключей");
+
 console.log("Движок в порядке");

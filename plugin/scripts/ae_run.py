@@ -164,13 +164,16 @@ def export_transforms(out, settings, comp="", latest=False):
 
 
 def write_snapshot(scene_path, settings):
-    """Снимок сборки для diff: слои только что собранной композиции и adjust сцены на момент сборки."""
+    """Снимок сборки для diff: слои только что собранной композиции, adjust и delay сцены на момент сборки."""
     scene = read_json(scene_path)
     out = snapshot_path(scene_path)
     export_transforms(out, settings, scene["comp"]["name"], latest=True)
     data = read_json(out)
     data["scene_hash"] = file_hash(scene_path)
     data["adjust"] = {item_id(item, n): item["adjust"] for n, item in enumerate(scene["items"]) if item.get("adjust")}
+    data["delay"] = {item_id(item, n): item.get("delay") or 0 for n, item in enumerate(scene["items"])}
+    journal = sound_log_path(scene_path)
+    data["starts"] = read_json(journal).get("starts", {}) if journal.is_file() else {}
     out.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
@@ -204,6 +207,9 @@ def main():
             build_stamp_path(args.path).write_text(json.dumps(stamp, indent=2), encoding="utf-8")
             write_snapshot(args.path.resolve(), settings)
             export_layout(args.path.resolve(), settings)
+            journal = sound_log_path(args.path.resolve())
+            for lost in (read_json(journal).get("edits_lost", []) if journal.is_file() else []):
+                print(f"Правка автора без слоя (блок изменился), не применена: {lost}")
         elif args.command == "diff":
             diff(args.path.resolve(), settings, args.comp, args.apply, args.all)
             return
