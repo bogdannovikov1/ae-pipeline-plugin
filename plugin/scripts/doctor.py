@@ -16,6 +16,12 @@ from validate import ENGINE_VERSION
 
 
 
+# After Effects на Windows не находит начертание внутри вариативного файла (подставляет Times New Roman)
+# и не видит шрифт, скопированный в папку шрифтов вручную: ставить обычный файл начертания через Windows.
+FONT_HINT = ("установите шрифт базы обычным файлом начертания, не вариативным: правый клик по файлу > «Установить»"
+             if platform.system() == "Windows" else "установите шрифт базы")
+
+
 def has_font(name, folders):
     """Ищет файл шрифта по имени семейства. У вариативных шрифтов файл называется
     по семейству (Caveat[wght].ttf), а PostScript-имя добавляет Roman (CaveatRoman-Bold)."""
@@ -71,7 +77,7 @@ def main():
         checks.append((f"ключ ElevenLabs в {secret_store.where()}", found, secret_store.hint(voice["keychain_service"])))
     if (base / "tokens.json").is_file():
         for font in base_fonts(json.loads((base / "tokens.json").read_text(encoding="utf-8"))):
-            checks.append((f"шрифт {font}", has_font(font, settings["doctor"]["font_folders"]), "установите шрифт базы"))
+            checks.append((f"шрифт {font}", has_font(font, settings["doctor"]["font_folders"]), FONT_HINT))
 
     print(f"Плагин: {PLUGIN_ROOT}")
     failed = 0

@@ -231,7 +231,8 @@
       "doctor": {
         "font_folders": [
           "%WINDIR%/Fonts",
-          "%LOCALAPPDATA%/Microsoft/Windows/Fonts"
+          "%LOCALAPPDATA%/Microsoft/Windows/Fonts",
+          "%CommonProgramFiles%/Adobe/Fonts"
         ]
       }
     }
