@@ -297,7 +297,7 @@ class Fragment(ExtensionMixin, RoundsMixin):
                 "title": stage["title"],
                 "status": status,
                 "executor": stage["executor"],
-                "folder": str(self.folder),
+                "folder": self.folder.as_posix(),
                 "inputs": self.names(stage["inputs"]),
                 "outputs": self.names(stage["outputs"]),
                 "note": self.state["stages"][stage_id].get("note"),
@@ -320,7 +320,7 @@ class Fragment(ExtensionMixin, RoundsMixin):
                 action["round"] = number
                 action["limit"] = self.settings["review"]["max_rounds"]
             return action
-        return {"action": "finished", "fragment": self.name, "folder": str(self.folder)}
+        return {"action": "finished", "fragment": self.name, "folder": self.folder.as_posix()}
 
     def is_due(self):
         """Периодический этап идёт на каждом N-м фрагменте видео; 0 отключает его."""

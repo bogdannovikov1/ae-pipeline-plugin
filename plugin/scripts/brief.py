@@ -46,7 +46,7 @@ def split_front(text):
 
 def resolve(text, arguments=""):
     """Подставляет настоящие пути вместо переменных Claude Code."""
-    return text.replace("${CLAUDE_PLUGIN_ROOT}", str(PLUGIN_ROOT)).replace("$ARGUMENTS", arguments or "(не переданы)")
+    return text.replace("${CLAUDE_PLUGIN_ROOT}", PLUGIN_ROOT.as_posix()).replace("$ARGUMENTS", arguments or "(не переданы)")
 
 
 def role_file(role):
@@ -68,17 +68,17 @@ def environment(video=None):
     base = bases_dir(settings) / settings["base"]
     needed = read_json(base / "base.json").get("engine", 1) if (base / "base.json").is_file() else None
     info = {
-        "plugin": str(PLUGIN_ROOT),
+        "plugin": PLUGIN_ROOT.as_posix(),
         "plugin_version": plugin_version(),
         "engine": ENGINE_VERSION,
-        "scripts": f"python3 {PLUGIN_ROOT / 'scripts'}/<скрипт>.py",
-        "base": str(base),
+        "scripts": f"python3 {PLUGIN_ROOT.as_posix()}/scripts/<скрипт>.py",
+        "base": base.as_posix(),
         "base_found": (base / "tokens.json").is_file(),
         "base_engine": needed,
         "compatible": needed == ENGINE_VERSION,
     }
     if video:
-        info["video"] = str(Path(video).expanduser().resolve())
+        info["video"] = Path(video).expanduser().resolve().as_posix()
     return info
 
 
@@ -108,7 +108,7 @@ def task_lines(video, fragment, task):
                 action = state.next_action()
             except PipelineError as error:
                 action = {"error": str(error)}
-            lines.append(f"- Папка фрагмента: `{state.folder}`. Пути файлов ниже — относительно неё.")
+            lines.append(f"- Папка фрагмента: `{Path(state.folder).as_posix()}`. Пути файлов ниже — относительно неё.")
             lines.append("- Следующее действие конвейера (`pipeline.py next`):")
             lines.append("```json\n" + json.dumps(action, ensure_ascii=False, indent=2) + "\n```")
     if task:
@@ -146,9 +146,9 @@ def agents_section(video):
         "",
         "Это видео ведётся плагином ae-video. Любая модель (Claude, ChatGPT, Codex и другие) работает так:",
         "",
-        f"1. Узнай фрагмент и получи свою роль: `python3 {PLUGIN_ROOT}/scripts/brief.py make {info['video']} <фрагмент>`. Выполняй вывод по шагам.",
-        f"2. Исполнителю этапа (transcriber, director, animator, checker, reviewer, librarian) передавай целиком вывод `python3 {PLUGIN_ROOT}/scripts/brief.py <роль> {info['video']} <фрагмент> --task \"<слова автора>\"`. Своими словами роль не пересказывай.",
-        f"3. Состояние этапов: `python3 {PLUGIN_ROOT}/scripts/pipeline.py next {info['video']} <фрагмент>`.",
+        f"1. Узнай фрагмент и получи свою роль: `python3 {PLUGIN_ROOT.as_posix()}/scripts/brief.py make {info['video']} <фрагмент>`. Выполняй вывод по шагам.",
+        f"2. Исполнителю этапа (transcriber, director, animator, checker, reviewer, librarian) передавай целиком вывод `python3 {PLUGIN_ROOT.as_posix()}/scripts/brief.py <роль> {info['video']} <фрагмент> --task \"<слова автора>\"`. Своими словами роль не пересказывай.",
+        f"3. Состояние этапов: `python3 {PLUGIN_ROOT.as_posix()}/scripts/pipeline.py next {info['video']} <фрагмент>`.",
         "",
         *env_lines(info),
         "",
