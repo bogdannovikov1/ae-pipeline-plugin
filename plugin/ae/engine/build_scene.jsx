@@ -29,14 +29,16 @@
     }
 
     // Paths may be relative to the scene, so a video folder can move between machines.
+    // Absolute: "/...", "~...", a UNC path and Windows "C:\..." or "C:/...".
     function resolvePath(value, folder) {
         var first = value.charAt(0);
-        return first === "/" || first === "~" ? value : folder + "/" + value;
+        var absolute = first === "/" || first === "~" || first === "\\" || /^[A-Za-z]:[\\/]/.test(value);
+        return absolute ? value : folder + "/" + value;
     }
 
     // A base is a path or a name inside the bases folder from the plugin settings.
     function resolveBase(value, folder) {
-        if (value.indexOf("/") === -1 && $.global.BASES_DIR) {
+        if (value.indexOf("/") === -1 && value.indexOf("\\") === -1 && $.global.BASES_DIR) {
             return $.global.BASES_DIR + "/" + value;
         }
         return resolvePath(value, folder);

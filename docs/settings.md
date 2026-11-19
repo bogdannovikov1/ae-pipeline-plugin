@@ -2,7 +2,7 @@
 
 Слои, каждый следующий перекрывает предыдущий по ключам:
 
-1. `plugin/config/defaults.json`: значения по умолчанию.
+1. `plugin/config/defaults.json`: значения по умолчанию. Блок `platforms.<sys.platform>` (сейчас `win32`) накладывается поверх них на этой системе: движок распознавания, папка приложений, шрифты.
 2. `~/.config/ae-video/settings.json`: личные, переживают обновления плагина.
 3. `<видео>/settings.json`: одно видео.
 
@@ -24,7 +24,7 @@ python3 plugin/scripts/settings.py show --video <папка видео>
 | `videos_dir` | Папка, где создаются новые видео |
 | `first_fragment` | Имя первого фрагмента нового видео |
 | `voice.api_url` | Адрес API ElevenLabs |
-| `voice.keychain_service` | Служба в Связке ключей macOS, где лежит ключ ElevenLabs |
+| `voice.keychain_service` | Служба в Связке ключей macOS или Диспетчере учётных данных Windows, где лежит ключ ElevenLabs; положить ключ: `secret_store.py set <служба>` |
 | `voice.model` | Модель ElevenLabs; список: `voice.py models` |
 | `voice.voice_name` | Имя голоса автора в ElevenLabs, личная настройка |
 | `voice.voice_settings` | Параметры голоса для API, например `stability` |
@@ -50,7 +50,9 @@ python3 plugin/scripts/settings.py show --video <папка видео>
 | `lab.tail` | Хвост демо-сцены после последней метки, с |
 | `lab.sample_rate` | Частота тишины в демо-сцене песочницы, Гц |
 | `lab.width`, `lab.height` | Размер кадра демо-сцены |
-| `transcribe.model` | Модель MLX Whisper |
+| `transcribe.backend` | Движок распознавания: `mlx` (Mac на Apple Silicon) или `faster-whisper` (Windows) |
+| `transcribe.model` | Модель Whisper для движка: репозиторий MLX или имя модели faster-whisper |
+| `transcribe.device`, `transcribe.compute_type` | Для faster-whisper: устройство (`auto`, `cpu`, `cuda`) и точность вычислений |
 | `transcribe.language` | Язык записи |
 | `transcribe.review_below` | Слова с уверенностью ниже помечаются на проверку |
 | `refine.frame_seconds` | Длина кадра анализа громкости, с |
@@ -63,7 +65,8 @@ python3 plugin/scripts/settings.py show --video <папка видео>
 | `refine.threshold_position` | Порог между шумом (0) и речью (1) |
 | `ae.app` | Имя приложения After Effects |
 | `ae.timeout` | Предел выполнения скрипта в AE, с |
-| `ae.apps_dir` | Папка приложений, где `doctor.py` ищет After Effects |
+| `ae.apps_dir` | Папка приложений, где лежит After Effects |
+| `ae.exe` | Windows: путь к `AfterFX.exe` внутри папки приложения |
 | `ae.ready_check_timeout` | Ожидание ответа AE на одну проверку готовности при запуске, с |
 | `ae.ready_check_pause` | Пауза между проверками готовности AE, с |
 | `ae.frame_poll_seconds` | Как часто проверять, дописались ли кадры съёмки, с |

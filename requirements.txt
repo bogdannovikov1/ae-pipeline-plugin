@@ -1,2 +1,4 @@
-mlx-whisper
+mlx-whisper; sys_platform == "darwin"
+faster-whisper; sys_platform != "darwin"
+keyring; sys_platform != "darwin"
 numpy

@@ -698,7 +698,9 @@ class Lab(Case):
         target = lab_part(self.settings, "pop", "styles", seconds=3)
         scene = json.loads((target / "lab.scene.json").read_text())
         self.assertEqual(scene["comp"]["name"], "lab_pop_styles")
-        self.assertTrue((target / "blocks").is_symlink())
+        link = target / "blocks"
+        # На Windows без прав администратора вместо символической ссылки junction.
+        self.assertTrue(link.is_symlink() or getattr(link, "is_junction", lambda: False)())
         self.assertEqual(check_scene(target / "lab.scene.json", self.settings), [])
         lab_part(self.settings, "pop", "speed")
         self.assertEqual([s.parent.name for s in lab_scenes(folder)], ["speed", "styles"])

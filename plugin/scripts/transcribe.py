@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Пословный транскрипт аудио через MLX Whisper для маркеров After Effects.
+"""Пословный транскрипт аудио через Whisper (MLX на Mac, faster-whisper на Windows) для маркеров After Effects.
 
 Пример:
     python3 transcribe.py voice.mp3 --fps 30 --prompt "After Effects, ExtendScript"
@@ -53,12 +53,43 @@ def build_timeline(result, fps, review_below):
     return words, phrases
 
 
+def recognize(audio, model, language, prompt, settings):
+    """Распознаёт запись выбранным движком и отдаёт результат в формате Whisper:
+    text и segments со словами (word, start, end, probability).
+
+    mlx: MLX Whisper, только Mac на Apple Silicon. faster-whisper: Windows и Linux.
+    Импорт внутри, чтобы --help и ошибки аргументов не ждали загрузку модели."""
+    backend = settings.get("backend", "mlx")
+    if backend == "mlx":
+        import mlx_whisper
+        return mlx_whisper.transcribe(
+            str(audio),
+            path_or_hf_repo=model,
+            language=language,
+            initial_prompt=prompt,
+            word_timestamps=True,
+        )
+    if backend != "faster-whisper":
+        sys.exit(f"Неизвестный движок распознавания transcribe.backend: {backend}")
+    from faster_whisper import WhisperModel
+    engine = WhisperModel(model, device=settings.get("device", "auto"), compute_type=settings.get("compute_type", "default"))
+    segments, _ = engine.transcribe(str(audio), language=language, initial_prompt=prompt, word_timestamps=True)
+    result = {"segments": []}
+    for segment in segments:
+        result["segments"].append({
+            "text": segment.text,
+            "words": [{"word": w.word, "start": w.start, "end": w.end, "probability": w.probability} for w in segment.words or []],
+        })
+    result["text"] = "".join(s["text"] for s in result["segments"])
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("audio", type=Path, help="путь к аудиофайлу")
     parser.add_argument("-o", "--output", type=Path, help="куда сохранить JSON (по умолчанию <аудио>.timeline.json)")
     parser.add_argument("--language", help="язык записи, по умолчанию из настроек")
-    parser.add_argument("--model", help="модель MLX Whisper")
+    parser.add_argument("--model", help="модель Whisper, по умолчанию из настроек")
     parser.add_argument("--prompt", help="подсказка с терминами и брендами")
     parser.add_argument("--fps", type=float, help="добавить номера кадров для этой частоты")
     parser.add_argument("--review-below", type=float, help="порог уверенности для пометки needs_review")
@@ -80,17 +111,8 @@ def main():
     if output.exists() and json.loads(output.read_text(encoding="utf-8")).get("status") == "approved":
         sys.exit(f"Транскрипт заморожен: {output}. Сначала снимите заморозку: approve_transcript.py --reopen")
 
-    # Импорт здесь, чтобы --help и ошибки аргументов не ждали загрузку MLX.
-    import mlx_whisper
-
     print(f"Распознаю {args.audio} моделью {args.model}...", file=sys.stderr)
-    result = mlx_whisper.transcribe(
-        str(args.audio),
-        path_or_hf_repo=args.model,
-        language=args.language,
-        initial_prompt=args.prompt,
-        word_timestamps=True,
-    )
+    result = recognize(args.audio, args.model, args.language, args.prompt, settings)
 
     words, phrases = build_timeline(result, args.fps, args.review_below)
     if not words:

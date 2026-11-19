@@ -10,6 +10,7 @@
 """
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -30,6 +31,7 @@ LAYOUT_SCRIPT = PLUGIN_ROOT / "ae" / "export_layout.jsx"
 OPEN_SCRIPT = PLUGIN_ROOT / "ae" / "open_project.jsx"
 TRANSFORMS_SCRIPT = PLUGIN_ROOT / "ae" / "export_transforms.jsx"
 ERROR_PREFIX = "error: "
+WINDOWS = os.name == "nt"
 
 
 def js_string(value):
@@ -38,7 +40,7 @@ def js_string(value):
 
 def project_pattern(patterns):
     """Переводит шаблоны автосохранения в регулярное выражение для JSX."""
-    parts = [re.escape(str(Path(p).expanduser())).replace(r"\*", "[^/]*") for p in patterns]
+    parts = [re.escape(Path(p).expanduser().as_posix()).replace(r"\*", "[^/]*") for p in patterns]
     return "^(" + "|".join(parts) + ")(/|$)"
 
 
@@ -54,7 +56,7 @@ def wrapper(script, globals_, pattern, result, readonly=False):
 try {{
 if ({guard}) {{
     var projectFile = app.project.file;
-    if (projectFile && new RegExp({js_string(pattern)}).test(projectFile.fsName)) {{
+    if (projectFile && new RegExp({js_string(pattern)}, {js_string("i" if WINDOWS else "")}).test(projectFile.fsName.replace(/\\\\/g, "/"))) {{
         app.project.save();
     }} else {{
         throw new Error("The open project has unsaved changes");
@@ -64,15 +66,42 @@ if ({guard}) {{
 }} catch (e) {{
     outcome = {js_string(ERROR_PREFIX)} + e.toString() + " (line " + e.line + ")";
 }}
-{clears}var result = new File({js_string(result)});
+{clears}var result = new File({js_string(result)} + ".part");
 result.encoding = "UTF-8";
 result.open("w");
 result.write(outcome);
 result.close();
+result.rename({js_string(Path(result).name)});
 """
 
 
+def ae_exe(settings):
+    """Путь к AfterFX.exe на Windows."""
+    ae = settings["ae"]
+    return Path(ae["apps_dir"], ae["app"], ae["exe"])
+
+
+def send_script(settings, runner):
+    """Windows: передаёт скрипт запущенному AE. AfterFX.exe -r возвращается сразу, итог ждём по файлу."""
+    exe = ae_exe(settings)
+    if not exe.is_file():
+        raise RuntimeError(f"Не найден {exe}: проверьте ae.app и ae.apps_dir в настройках")
+    subprocess.Popen([str(exe), "-r", str(runner)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def wait_file(path, seconds, pause):
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        if path.is_file():
+            return True
+        time.sleep(pause)
+    return path.is_file()
+
+
 def is_running(settings):
+    if WINDOWS:
+        listed = subprocess.run(["tasklist", "/FI", "IMAGENAME eq AfterFX.exe", "/NH"], capture_output=True, text=True, errors="replace")
+        return "afterfx.exe" in listed.stdout.lower()
     check = f'application {json.dumps(settings["ae"]["app"])} is running'
     return subprocess.run(["osascript", "-e", check], capture_output=True, text=True).stdout.strip() == "true"
 
@@ -82,6 +111,9 @@ def launch(settings, allowed):
     ae = settings["ae"]
     if not is_running(settings) and not allowed:
         raise RuntimeError("After Effects не запущен. Спросите автора и повторите команду с --launch")
+    if WINDOWS:
+        launch_windows(settings)
+        return
     if subprocess.run(["open", "-a", ae["app"]], capture_output=True).returncode:
         raise RuntimeError(f"Не удалось запустить {ae['app']}: проверьте настройку ae.app")
     command = (
@@ -97,6 +129,29 @@ def launch(settings, allowed):
     raise RuntimeError(f"After Effects не ответил за {ae['launch_timeout']} с")
 
 
+def launch_windows(settings):
+    """Запускает AfterFX.exe, если он не запущен, и ждёт, пока он начнёт выполнять скрипты."""
+    ae = settings["ae"]
+    if not is_running(settings):
+        exe = ae_exe(settings)
+        if not exe.is_file():
+            raise RuntimeError(f"Не найден {exe}: проверьте ae.app и ae.apps_dir в настройках")
+        flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        subprocess.Popen([str(exe)], creationflags=flags, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    deadline = time.time() + ae["launch_timeout"]
+    with tempfile.TemporaryDirectory() as folder:
+        ping = Path(folder) / "ping.txt"
+        runner = Path(folder) / "ping.jsx"
+        runner.write_text(f'var f = new File({js_string(ping)}); f.open("w"); f.write("1"); f.close();', encoding="utf-8")
+        while time.time() < deadline:
+            if is_running(settings):
+                send_script(settings, runner)
+                if wait_file(ping, ae["ready_check_timeout"], ae["frame_poll_seconds"]):
+                    return
+            time.sleep(ae["ready_check_pause"])
+    raise RuntimeError(f"After Effects не ответил за {ae['launch_timeout']} с")
+
+
 def run_jsx(script, globals_, settings, extra_autosave=(), readonly=False):
     """Выполняет JSX и возвращает его итог. Ошибка скрипта становится RuntimeError."""
     ae = settings["ae"]
@@ -105,6 +160,17 @@ def run_jsx(script, globals_, settings, extra_autosave=(), readonly=False):
         runner = Path(folder) / "runner.jsx"
         pattern = project_pattern(list(ae["autosave_projects"]) + list(extra_autosave))
         runner.write_text(wrapper(script, globals_, pattern, result, readonly), encoding="utf-8")
+        if WINDOWS:
+            if not is_running(settings):
+                raise RuntimeError("After Effects не запущен. Спросите автора и откройте проект командой open --launch")
+            send_script(settings, runner)
+            if not wait_file(result, ae["timeout"], ae["frame_poll_seconds"]):
+                raise RuntimeError(f"After Effects не сообщил итог за {ae['timeout']} с: скрипт завис, AE занят диалогом "
+                                   "или выключена настройка Allow Scripts to Write Files")
+            outcome = result.read_text(encoding="utf-8")
+            if outcome.startswith(ERROR_PREFIX):
+                raise RuntimeError(outcome[len(ERROR_PREFIX):])
+            return outcome
         command = (
             f'with timeout of {ae["timeout"]} seconds\n'
             f'tell application {json.dumps(ae["app"])} to DoScriptFile {json.dumps(str(runner))}\n'

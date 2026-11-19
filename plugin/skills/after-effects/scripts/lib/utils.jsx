@@ -1,10 +1,18 @@
 // utils.jsx — Shared helpers for AE Assistant query scripts
 // All query scripts #include this file
 
+// Exchange files with the runner: /tmp on macOS (runner.sh), %TEMP% on Windows (runner_win.py)
+function tempPath(name) {
+    if ($.os.indexOf("Windows") !== -1) {
+        return Folder.temp.fsName + "\\" + name;
+    }
+    return "/tmp/" + name;
+}
+
 // Write JSON result to temp output file
 function writeResult(obj) {
     var jsonStr = JSON.stringify(obj);
-    var outFile = new File("/tmp/ae-assistant-result.json");
+    var outFile = new File(tempPath("ae-assistant-result.json"));
     outFile.encoding = "UTF-8";
     outFile.open("w");
     outFile.write(jsonStr);
@@ -18,7 +26,7 @@ function writeError(message, detail) {
         errStr += ',"detail":"' + String(detail).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n') + '"';
     }
     errStr += '}';
-    var outFile = new File("/tmp/ae-assistant-result.json");
+    var outFile = new File(tempPath("ae-assistant-result.json"));
     outFile.encoding = "UTF-8";
     outFile.open("w");
     outFile.write(errStr);
@@ -36,7 +44,7 @@ function appendLog(message) {
 
 // Read arguments from temp input file
 function readArgs() {
-    var argFile = new File("/tmp/ae-assistant-args.json");
+    var argFile = new File(tempPath("ae-assistant-args.json"));
     if (!argFile.exists) return {};
     argFile.encoding = "UTF-8";
     argFile.open("r");

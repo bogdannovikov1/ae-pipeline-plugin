@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Голос из текста через ElevenLabs: проверка тегов, озвучка голосом автора, EQ через ffmpeg.
 
-Ключ API лежит в Связке ключей macOS (служба из voice.keychain_service):
-    security add-generic-password -U -a "$USER" -s ae-video-elevenlabs -w
+Ключ API лежит в Связке ключей macOS или Диспетчере учётных данных Windows
+(служба из voice.keychain_service), положить его:
+    python3 secret_store.py set ae-video-elevenlabs
 
 Пример:
     python3 voice.py models
@@ -20,6 +21,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+import secret_store
 from settings import load_settings
 
 TAG = re.compile(r"\[([^\[\]]*)\]")
@@ -172,13 +174,13 @@ def chunks(text, max_chars):
 
 
 def api_key(service):
-    run = subprocess.run(["security", "find-generic-password", "-s", service, "-w"], capture_output=True, text=True)
-    if run.returncode != 0 or not run.stdout.strip():
+    key = secret_store.get(service)
+    if not key:
         raise VoiceError(
-            f"Нет ключа ElevenLabs в Связке ключей (служба {service}). Положите его командой:\n"
-            f'security add-generic-password -U -a "$USER" -s {service} -w'
+            f"Нет ключа ElevenLabs в {secret_store.where()} (служба {service}). Положите его командой:\n"
+            f"{secret_store.hint(service)}"
         )
-    return run.stdout.strip()
+    return key
 
 
 def request(cfg, key, method, path, query=None, body=None):

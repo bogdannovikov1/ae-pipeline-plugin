@@ -27,11 +27,11 @@
 
 | Что | Зачем | Как получить |
 |---|---|---|
-| Mac на Apple Silicon (M1 и новее) | Расшифровка через MLX работает только на нём | — |
+| Mac на Apple Silicon (M1 и новее) или Windows 10/11 | На Mac расшифровка идёт через MLX, на Windows через faster-whisper | — |
 | Adobe After Effects | Сборка видео. Плагин проверялся на версии 2026 | [Creative Cloud](https://www.adobe.com/products/aftereffects.html) |
 | Claude Code | В нём работают агенты плагина. Нужна учётная запись Claude с доступом к Claude Code | [Инструкция по установке](https://code.claude.com/docs) |
-| Python 3.9 или новее | Скрипты плагина | Обычно уже есть: проверьте `python3 --version` |
-| ffmpeg | Работа со звуком и кадрами | `brew install ffmpeg` |
+| Python 3.9 или новее | Скрипты плагина | На Mac обычно уже есть: `python3 --version`. На Windows: [python.org](https://www.python.org/downloads/), затем см. «Windows» ниже |
+| ffmpeg | Работа со звуком и кадрами | Mac: `brew install ffmpeg`, Windows: `winget install Gyan.FFmpeg` |
 | Шрифты Golos Text и JetBrains Mono | Шрифты стартовой базы | [Golos Text](https://fonts.google.com/specimen/Golos+Text), [JetBrains Mono](https://fonts.google.com/specimen/JetBrains+Mono) |
 
 На диске понадобится около 2 ГБ: при первой расшифровке скачивается модель распознавания речи.
@@ -57,6 +57,14 @@ claude plugin install ae-video@ae-video-marketplace
 ```bash
 pip3 install mlx-whisper numpy
 ```
+
+На Windows вместо этого:
+
+```powershell
+python -m pip install faster-whisper keyring numpy
+```
+
+**Windows.** Инструкции плагина вызывают `python3`, а на Windows эта команда обычно ведёт в заглушку Microsoft Store. Отключите её в `Параметры > Приложения > Дополнительные параметры > Псевдонимы выполнения приложений` (пункты «python3.exe») и положите рядом с `python.exe` его копию под именем `python3.exe`. Claude Code на Windows запускает команды в Git Bash, он ставится вместе с [Git for Windows](https://git-scm.com/download/win). After Effects ищется в `C:/Program Files/Adobe` (настройки `ae.apps_dir`, `ae.app`).
 
 **4. Настройте After Effects.** Откройте After Effects, затем `Settings > Scripting & Expressions` и включите **Allow Scripts to Write Files and Access Network**. Без этого скрипты не смогут сохранять результат. На английском интерфейсе пункт называется именно так, на других языках название будет переведено.
 
@@ -90,10 +98,10 @@ claude plugin update ae-video@ae-video-marketplace
 
 Для первого раза возьмите запись на 30–60 секунд.
 
-**Голос из текста.** Вместо записи можно дать текст: плагин расставит теги интонации, покажет их вам и после вашего «да» озвучит текст вашим голосом в ElevenLabs, затем применит EQ. Для этого нужен свой голос в ElevenLabs и ключ API с правами Text to Speech, Voices (Read) и Models. Ключ кладётся в Связку ключей macOS, команда спросит его, не показывая:
+**Голос из текста.** Вместо записи можно дать текст: плагин расставит теги интонации, покажет их вам и после вашего «да» озвучит текст вашим голосом в ElevenLabs, затем применит EQ. Для этого нужен свой голос в ElevenLabs и ключ API с правами Text to Speech, Voices (Read) и Models. Ключ кладётся в Связку ключей macOS или Диспетчер учётных данных Windows, команда спросит его, не показывая:
 
 ```bash
-security add-generic-password -U -a "$USER" -s ae-video-elevenlabs -w
+python3 <папка плагина>/scripts/secret_store.py set ae-video-elevenlabs
 ```
 
 В личных настройках `~/.config/ae-video/settings.json` укажите имя голоса, EQ и папку видео:
@@ -299,7 +307,8 @@ my_first_video/
 | Не удалось запустить After Effects | Укажите в настройках точное название приложения: `ae.app` |
 | `The open project has unsaved changes` | Сохраните открытый проект в After Effects и повторите. Плагин не трогает чужие несохранённые проекты |
 | Вместо шрифта стоит другой | Установите шрифты базы и перезапустите After Effects |
-| `mlx_whisper` не найден | Выполните `pip3 install mlx-whisper numpy` тем же `python3`, который используется в Терминале |
+| `mlx_whisper` или `faster_whisper` не найден | Установите библиотеки из шага 3 тем же Python, который вызывается командой `python3` |
+| Windows: `python3` открывает Microsoft Store | См. «Windows» в шаге 3 установки |
 | Первая расшифровка идёт долго | Скачивается модель, около 1,6 ГБ. Следующие запуски будут быстрее |
 | Неточные таймкоды слов | Поправьте маркеры на ревью. Распознавание даёт приблизительное положение |
 | Этап помечен устаревшим | Изменился файл, от которого он зависит. Вызовите `/ae-video:make`: плагин скажет, что дальше |
@@ -308,7 +317,7 @@ my_first_video/
 
 ## Ограничения
 
-- Только macOS на Apple Silicon: запуск After Effects идёт через AppleScript, распознавание через MLX.
+- macOS на Apple Silicon или Windows. На Mac After Effects управляется через AppleScript, на Windows через `AfterFX.exe -r`; ответ скрипта плагин ждёт по файлу.
 - Движение и звук агенты не оценивают: кадры показывают только отдельные моменты. Финальное решение всегда за вами.
 - Склейка фрагментов в одно видео пока не автоматизирована.
 - После ручной доводки новая часть не может анимировать объекты из старой части: плагин предложит создать их заново или пересобрать всё.

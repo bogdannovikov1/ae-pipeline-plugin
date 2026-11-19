@@ -15,6 +15,11 @@
 
 set -euo pipefail
 
+# Windows (Git Bash, MSYS, Cygwin): osascript нет, работу делает runner_win.py.
+case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) exec python "$(dirname "$0")/runner_win.py" "$@" ;;
+esac
+
 CONFIG_FILE="$HOME/.ae-assistant-config"
 ARGS_FILE="/tmp/ae-assistant-args.json"
 RESULT_FILE="/tmp/ae-assistant-result.json"

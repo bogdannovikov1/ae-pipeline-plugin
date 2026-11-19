@@ -7,6 +7,7 @@
 """
 import argparse
 import json
+import sys
 from pathlib import Path
 
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
@@ -30,8 +31,15 @@ def read_layer(path):
     return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
 
 
+def read_defaults(platform=sys.platform):
+    """Значения по умолчанию с поправками для текущей системы из блока platforms."""
+    defaults = read_layer(DEFAULTS_PATH)
+    overrides = defaults.pop("platforms", {})
+    return merge(defaults, overrides.get(platform, {}))
+
+
 def load_settings(video=None, user_path=USER_PATH):
-    settings = merge(read_layer(DEFAULTS_PATH), read_layer(user_path))
+    settings = merge(read_defaults(), read_layer(user_path))
     if video:
         settings = merge(settings, read_layer(Path(video) / VIDEO_FILE))
     return settings

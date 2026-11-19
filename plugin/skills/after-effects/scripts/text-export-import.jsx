@@ -14,7 +14,7 @@
     try {
         var args = readArgs();
         var mode = args.mode || "export";
-        var csvPath = args.csvPath || "/tmp/ae-project-text.csv";
+        var csvPath = args.csvPath || tempPath("ae-project-text.csv");
 
         if (mode === "export") {
             doExport(csvPath);

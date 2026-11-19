@@ -9,7 +9,10 @@
   "transcribe": {
     "model": "mlx-community/whisper-large-v3-turbo",
     "language": "ru",
-    "review_below": 0.6
+    "review_below": 0.6,
+    "backend": "mlx",
+    "device": "auto",
+    "compute_type": "default"
   },
   "refine": {
     "frame_seconds": 0.01,
@@ -214,5 +217,23 @@
     },
     "draft_level": -14,
     "draft_reference_loudness": -20
+  },
+  "platforms": {
+    "win32": {
+      "transcribe": {
+        "backend": "faster-whisper",
+        "model": "large-v3-turbo"
+      },
+      "ae": {
+        "apps_dir": "C:/Program Files/Adobe",
+        "exe": "Support Files/AfterFX.exe"
+      },
+      "doctor": {
+        "font_folders": [
+          "%WINDIR%/Fonts",
+          "%LOCALAPPDATA%/Microsoft/Windows/Fonts"
+        ]
+      }
+    }
   }
 }

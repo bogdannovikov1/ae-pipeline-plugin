@@ -4,9 +4,10 @@ description: >
   Automate Adobe After Effects via ExtendScript. Use when the user asks to
   create, modify, or query anything in an After Effects project — layers,
   keyframes, expressions, effects, compositions, assets, rendering, batch
-  operations. Generates and executes JSX ExtendScript via osascript on macOS.
-compatibility: Requires macOS with Adobe After Effects installed. Needs "Allow Scripts to Write Files and Access Network" enabled in AE Preferences > Scripting & Expressions.
-allowed-tools: Bash(osascript *) Bash(chmod *) Bash(bash *) Read Write
+  operations. Generates and executes JSX ExtendScript via osascript on macOS
+  or AfterFX.exe -r on Windows.
+compatibility: Requires macOS or Windows with Adobe After Effects installed (on Windows runner.sh runs under Git Bash and calls runner_win.py; AE must already be running). Needs "Allow Scripts to Write Files and Access Network" enabled in AE Preferences > Scripting & Expressions.
+allowed-tools: Bash(osascript *) Bash(chmod *) Bash(bash *) Bash(python *) Read Write
 metadata:
   author: aedev-tools
   version: "1.0"

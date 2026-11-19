@@ -13,6 +13,7 @@
 """
 import argparse
 import json
+import os
 import shutil
 import sys
 import wave
@@ -160,6 +161,17 @@ def variant(settings, block, name, assignments):
     return path, changes
 
 
+def link_dir(link, relative):
+    """Ссылка на папку. На Windows символическая ссылка требует прав администратора, поэтому там junction."""
+    try:
+        link.symlink_to(relative, target_is_directory=True)
+    except OSError:
+        if os.name != "nt":
+            raise
+        import _winapi
+        _winapi.CreateJunction(str((link.parent / relative).resolve()), str(link))
+
+
 def part(settings, block, name, seconds=None):
     """Короткое демо в своей папке и композиции: своя тишина и слова-метки, блоки общие с песочницей."""
     if not name.replace("_", "").isalnum():
@@ -169,7 +181,7 @@ def part(settings, block, name, seconds=None):
     if target.exists():
         raise LabError(f"Часть уже есть: {target}")
     target.mkdir(parents=True)
-    (target / "blocks").symlink_to(Path("..") / ".." / "blocks")
+    link_dir(target / "blocks", Path("..") / ".." / "blocks")
     lab = settings["lab"]
     timeline = lab_timeline(seconds or lab["part_seconds"], lab["word_seconds"])
     write_json(target / TIMELINE, timeline)
