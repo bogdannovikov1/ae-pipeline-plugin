@@ -61,8 +61,16 @@ pip3 install mlx-whisper numpy
 На Windows вместо этого:
 
 ```powershell
-python -m pip install faster-whisper keyring numpy
+python -m pip install faster-whisper "av<16" keyring numpy
 ```
+
+С видеокартой NVIDIA распознавание в разы быстрее и можно взять полную модель `large-v3` вместо `large-v3-turbo`:
+
+```powershell
+python -m pip install nvidia-cublas-cu12 "nvidia-cudnn-cu12>=9,<10"
+```
+
+и в личных настройках `"transcribe": {"model": "large-v3", "device": "cuda", "compute_type": "float16"}`. Модель можно положить в папку и указать путь к ней в `transcribe.model`.
 
 **Windows.** Инструкции плагина вызывают `python3`, а на Windows эта команда обычно ведёт в заглушку Microsoft Store. Отключите её в `Параметры > Приложения > Дополнительные параметры > Псевдонимы выполнения приложений` (пункты «python3.exe») и положите рядом с `python.exe` его копию под именем `python3.exe`. Claude Code на Windows запускает команды в Git Bash, он ставится вместе с [Git for Windows](https://git-scm.com/download/win). After Effects ищется в `C:/Program Files/Adobe` (настройки `ae.apps_dir`, `ae.app`).
 

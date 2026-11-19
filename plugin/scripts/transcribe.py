@@ -6,6 +6,7 @@
 """
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -53,6 +54,21 @@ def build_timeline(result, fps, review_below):
     return words, phrases
 
 
+def add_cuda_dlls():
+    """Windows: библиотеки CUDA из pip (nvidia-cublas-cu12, nvidia-cudnn-cu12) лежат в site-packages/nvidia/*/bin
+    и сами в путь поиска DLL не попадают. Без них faster-whisper работает только на процессоре."""
+    if os.name != "nt":
+        return
+    try:
+        import nvidia
+    except ImportError:
+        return
+    for root in nvidia.__path__:
+        for folder in Path(root).glob("*/bin"):
+            os.add_dll_directory(str(folder))
+            os.environ["PATH"] = f"{folder}{os.pathsep}{os.environ['PATH']}"
+
+
 def recognize(audio, model, language, prompt, settings):
     """Распознаёт запись выбранным движком и отдаёт результат в формате Whisper:
     text и segments со словами (word, start, end, probability).
@@ -71,8 +87,11 @@ def recognize(audio, model, language, prompt, settings):
         )
     if backend != "faster-whisper":
         sys.exit(f"Неизвестный движок распознавания transcribe.backend: {backend}")
+    add_cuda_dlls()
     from faster_whisper import WhisperModel
-    engine = WhisperModel(model, device=settings.get("device", "auto"), compute_type=settings.get("compute_type", "default"))
+    # Модель — имя (скачается сама) или папка на диске, в том числе с ~.
+    local = Path(model).expanduser()
+    engine = WhisperModel(str(local) if local.is_dir() else model, device=settings.get("device", "auto"), compute_type=settings.get("compute_type", "default"))
     segments, _ = engine.transcribe(str(audio), language=language, initial_prompt=prompt, word_timestamps=True)
     result = {"segments": []}
     for segment in segments:

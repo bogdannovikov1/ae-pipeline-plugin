@@ -51,7 +51,7 @@ python3 plugin/scripts/settings.py show --video <папка видео>
 | `lab.sample_rate` | Частота тишины в демо-сцене песочницы, Гц |
 | `lab.width`, `lab.height` | Размер кадра демо-сцены |
 | `transcribe.backend` | Движок распознавания: `mlx` (Mac на Apple Silicon) или `faster-whisper` (Windows) |
-| `transcribe.model` | Модель Whisper для движка: репозиторий MLX или имя модели faster-whisper |
+| `transcribe.model` | Модель Whisper для движка: репозиторий MLX, имя модели faster-whisper или папка с ней (можно с `~`) |
 | `transcribe.device`, `transcribe.compute_type` | Для faster-whisper: устройство (`auto`, `cpu`, `cuda`) и точность вычислений |
 | `transcribe.language` | Язык записи |
 | `transcribe.review_below` | Слова с уверенностью ниже помечаются на проверку |

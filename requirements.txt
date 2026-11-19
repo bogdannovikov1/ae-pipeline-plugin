@@ -1,4 +1,7 @@
 mlx-whisper; sys_platform == "darwin"
 faster-whisper; sys_platform != "darwin"
+# faster-whisper 1.2.1 передаёт в av.open параметр, которого нет в av 16+
+av<16; sys_platform != "darwin"
 keyring; sys_platform != "darwin"
 numpy
+# Видеокарта NVIDIA на Windows (transcribe.device = cuda): nvidia-cublas-cu12, nvidia-cudnn-cu12
